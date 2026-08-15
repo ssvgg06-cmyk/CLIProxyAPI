@@ -241,8 +241,8 @@ func (h *Handler) ListAuthFiles(c *gin.Context) {
 		c.JSON(500, gin.H{"error": "handler not initialized"})
 		return
 	}
-	if h.demoMode {
-		c.JSON(http.StatusOK, gin.H{"files": demoAuthFiles(time.Now())})
+	if h.poolMode {
+		c.JSON(http.StatusOK, gin.H{"files": poolAuthFiles(time.Now())})
 		return
 	}
 	if h.authManager == nil {
@@ -271,8 +271,8 @@ func (h *Handler) GetAuthFileModels(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "name is required"})
 		return
 	}
-	if h != nil && h.demoMode {
-		c.JSON(http.StatusOK, gin.H{"models": demoModelsForAuth(name)})
+	if h != nil && h.poolMode {
+		c.JSON(http.StatusOK, gin.H{"models": poolModelsForAuth(name)})
 		return
 	}
 

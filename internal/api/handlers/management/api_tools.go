@@ -112,6 +112,10 @@ func (h *Handler) APICall(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
+	if h != nil && h.poolMode {
+		poolAPICall(c, body)
+		return
+	}
 
 	method := strings.ToUpper(strings.TrimSpace(body.Method))
 	if method == "" {

@@ -46,7 +46,7 @@ type Handler struct {
 	envSecret           string
 	logDir              string
 	postAuthHook        coreauth.PostAuthHook
-	demoMode            bool
+	poolMode            bool
 }
 
 // NewHandler creates a new management handler instance.
@@ -62,7 +62,7 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
 		tokenStore:          sdkAuth.GetTokenStore(),
 		allowRemoteOverride: envSecret != "",
 		envSecret:           envSecret,
-		demoMode:            demoModeEnabled(),
+		poolMode:            poolModeEnabled(),
 	}
 	h.startAttemptCleanup()
 	return h
@@ -175,11 +175,11 @@ func (h *Handler) Middleware() gin.HandlerFunc {
 			c.AbortWithStatusJSON(statusCode, gin.H{"error": errMsg})
 			return
 		}
-		if h.demoMode {
-			c.Header("X-CPA-Demo-Mode", "true")
-			if !demoRequestAllowed(c.Request.Method, c.Request.URL.Path) {
+		if h.poolMode {
+			c.Header("X-CPA-Pool-Mode", "true")
+			if !poolRequestAllowed(c.Request.Method, c.Request.URL.Path) {
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-					"error": "demo mode is read-only",
+					"error": "credential pool is read-only",
 				})
 				return
 			}

@@ -1,0 +1,37 @@
+version: "3.3"
+
+services:
+  cpa-pool:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        VERSION: v7.1.5
+        COMMIT: claude-pool
+        BUILD_DATE: local
+    image: cpa-pool:v7.1.5
+    container_name: cpa-pool
+    command: ["./CLIProxyAPI", "--config", "/pool/config.yaml", "--local-model"]
+    environment:
+      CPA_POOL_MODE: "true"
+      MANAGEMENT_PASSWORD: "${CPA_POOL_PASSWORD}"
+    ports:
+      - "127.0.0.1:18317:8317"
+    networks:
+      - cpa-pool-network
+    volumes:
+      - ./config.yaml:/pool/config.yaml:ro
+    tmpfs:
+      - /tmp/cpa-pool:mode=700
+      - /pool/static:mode=755
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+networks:
+  cpa-pool-network:
+    external:
+      name: new-api-stack_app
