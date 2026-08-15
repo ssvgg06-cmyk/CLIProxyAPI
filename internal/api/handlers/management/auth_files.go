@@ -241,6 +241,10 @@ func (h *Handler) ListAuthFiles(c *gin.Context) {
 		c.JSON(500, gin.H{"error": "handler not initialized"})
 		return
 	}
+	if h.demoMode {
+		c.JSON(http.StatusOK, gin.H{"files": demoAuthFiles(time.Now())})
+		return
+	}
 	if h.authManager == nil {
 		h.listAuthFilesFromDisk(c)
 		return
@@ -265,6 +269,10 @@ func (h *Handler) GetAuthFileModels(c *gin.Context) {
 	name := c.Query("name")
 	if name == "" {
 		c.JSON(400, gin.H{"error": "name is required"})
+		return
+	}
+	if h != nil && h.demoMode {
+		c.JSON(http.StatusOK, gin.H{"models": demoModelsForAuth(name)})
 		return
 	}
 

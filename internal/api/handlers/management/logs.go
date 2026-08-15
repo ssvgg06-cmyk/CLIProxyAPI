@@ -28,6 +28,20 @@ func (h *Handler) GetLogs(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "handler unavailable"})
 		return
 	}
+	if h.demoMode {
+		limit, errLimit := parseLimit(c.Query("limit"))
+		if errLimit != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid limit: %v", errLimit)})
+			return
+		}
+		lines, total, latest := demoLogLines(time.Now(), parseCutoff(c.Query("after")), limit)
+		c.JSON(http.StatusOK, gin.H{
+			"lines":            lines,
+			"line-count":       total,
+			"latest-timestamp": latest,
+		})
+		return
+	}
 	if h.cfg == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "configuration unavailable"})
 		return
@@ -152,6 +166,10 @@ func (h *Handler) GetRequestErrorLogs(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "handler unavailable"})
 		return
 	}
+	if h.demoMode {
+		c.JSON(http.StatusOK, gin.H{"files": demoErrorLogFiles(time.Now())})
+		return
+	}
 	if h.cfg == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "configuration unavailable"})
 		return
@@ -214,6 +232,10 @@ func (h *Handler) GetRequestErrorLogs(c *gin.Context) {
 func (h *Handler) GetRequestLogByID(c *gin.Context) {
 	if h == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "handler unavailable"})
+		return
+	}
+	if h.demoMode {
+		demoDownloadRequestLog(c, strings.TrimSpace(c.Param("id")))
 		return
 	}
 	if h.cfg == nil {
@@ -301,6 +323,10 @@ func (h *Handler) GetRequestLogByID(c *gin.Context) {
 func (h *Handler) DownloadRequestErrorLog(c *gin.Context) {
 	if h == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "handler unavailable"})
+		return
+	}
+	if h.demoMode {
+		demoDownloadErrorLog(c, strings.TrimSpace(c.Param("name")))
 		return
 	}
 	if h.cfg == nil {

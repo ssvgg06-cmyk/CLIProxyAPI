@@ -46,6 +46,7 @@ type Handler struct {
 	envSecret           string
 	logDir              string
 	postAuthHook        coreauth.PostAuthHook
+	demoMode            bool
 }
 
 // NewHandler creates a new management handler instance.
@@ -61,6 +62,7 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
 		tokenStore:          sdkAuth.GetTokenStore(),
 		allowRemoteOverride: envSecret != "",
 		envSecret:           envSecret,
+		demoMode:            demoModeEnabled(),
 	}
 	h.startAttemptCleanup()
 	return h
@@ -172,6 +174,15 @@ func (h *Handler) Middleware() gin.HandlerFunc {
 		if !allowed {
 			c.AbortWithStatusJSON(statusCode, gin.H{"error": errMsg})
 			return
+		}
+		if h.demoMode {
+			c.Header("X-CPA-Demo-Mode", "true")
+			if !demoRequestAllowed(c.Request.Method, c.Request.URL.Path) {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+					"error": "demo mode is read-only",
+				})
+				return
+			}
 		}
 		c.Next()
 	}
