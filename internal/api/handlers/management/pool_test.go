@@ -74,6 +74,9 @@ func TestPoolAuthFilesUseUniqueMaskedGmailOnly(t *testing.T) {
 		if got := file["provider"]; got != "claude" {
 			t.Fatalf("provider = %q, want claude", got)
 		}
+		if got := file["account_type"]; got != "Claude Max" {
+			t.Fatalf("account type = %q, want Claude Max", got)
+		}
 		statuses[file["status"].(string)] = true
 	}
 	if !statuses["error"] || !statuses["disabled"] {
@@ -87,6 +90,36 @@ func TestPoolAuthFilesUseUniqueMaskedGmailOnly(t *testing.T) {
 	for _, forbidden := range []string{"access_token", "refresh_token", "example.net", "example.org", "gemini", "codex", "antigravity"} {
 		if strings.Contains(lower, forbidden) {
 			t.Fatalf("auth payload contains forbidden value %q", forbidden)
+		}
+	}
+}
+
+func TestPoolReloadMigratesEveryPlanToMax(t *testing.T) {
+	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "pool-state.json")
+	first := newPoolSimulator(path, now, 1234)
+	first.mu.Lock()
+	first.state.Accounts[0].Plan = "Claude Pro"
+	first.state.Accounts[1].Plan = "Claude Team"
+	first.state.Logs = append(first.state.Logs, poolLogEntry{Timestamp: now.UnixMilli(), Line: "plan=Claude Pro plan=Claude Team"})
+	if err := first.persistLocked(); err != nil {
+		first.mu.Unlock()
+		t.Fatalf("persist legacy plans: %v", err)
+	}
+	first.mu.Unlock()
+
+	reloaded := newPoolSimulator(path, now.Add(time.Minute), 9999)
+	files := reloaded.authFiles(now.Add(time.Minute), false)
+	for _, file := range files {
+		if got := file["account_type"]; got != "Claude Max" {
+			t.Fatalf("migrated account type = %q, want Claude Max", got)
+		}
+	}
+	reloaded.mu.Lock()
+	defer reloaded.mu.Unlock()
+	for _, entry := range reloaded.state.Logs {
+		if strings.Contains(entry.Line, "Claude Pro") || strings.Contains(entry.Line, "Claude Team") {
+			t.Fatalf("legacy plan remains in log: %q", entry.Line)
 		}
 	}
 }

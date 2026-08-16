@@ -156,7 +156,31 @@ func (s *poolSimulator) load() error {
 		return fmt.Errorf("unsupported credential pool state")
 	}
 	s.state = state
+	if s.normalizeMaxPlansLocked() {
+		return s.persistLocked()
+	}
 	return nil
+}
+
+func (s *poolSimulator) normalizeMaxPlansLocked() bool {
+	changed := false
+	for _, accounts := range [][]*poolAccount{s.state.Accounts, s.state.Retired} {
+		for _, account := range accounts {
+			if account.Plan != "Claude Max" {
+				account.Plan = "Claude Max"
+				changed = true
+			}
+		}
+	}
+	replacer := strings.NewReplacer("Claude Pro", "Claude Max", "Claude Team", "Claude Max")
+	for index := range s.state.Logs {
+		normalized := replacer.Replace(s.state.Logs[index].Line)
+		if normalized != s.state.Logs[index].Line {
+			s.state.Logs[index].Line = normalized
+			changed = true
+		}
+	}
+	return changed
 }
 
 func (s *poolSimulator) persistLocked() error {
@@ -447,9 +471,8 @@ func (s *poolSimulator) newAccountLocked(now time.Time, fresh bool) *poolAccount
 	rate := func(salt string) float64 {
 		return 0.01 + s.randomLocked(fmt.Sprintf("rate-%d-%s", id, salt))*0.03
 	}
-	plan := poolPlanForID(id)
 	monthlyLimit := 20000
-	if plan == "Claude Max" {
+	if id%5 == 0 {
 		monthlyLimit = 50000
 	}
 	return &poolAccount{
@@ -457,7 +480,7 @@ func (s *poolSimulator) newAccountLocked(now time.Time, fresh bool) *poolAccount
 		AuthIndex:         authIndex,
 		Email:             email,
 		Name:              fmt.Sprintf("claude-%s.json", email),
-		Plan:              plan,
+		Plan:              "Claude Max",
 		Account:           fmt.Sprintf("user_%012x", 0x4a3c10000000+id*104729),
 		Status:            "active",
 		CreatedAt:         createdAt,
@@ -489,17 +512,6 @@ func (s *poolSimulator) maskedEmailLocked(id uint64) string {
 	number := 100000 + int((id*7919+uint64(len(last))*104729)%900000)
 	stars := strings.Repeat("*", 4+int(id%5))
 	return fmt.Sprintf("%s%s%04d@gmail.com", prefix, stars, number%10000)
-}
-
-func poolPlanForID(id uint64) string {
-	switch {
-	case id%17 == 0:
-		return "Claude Team"
-	case id%5 == 0:
-		return "Claude Max"
-	default:
-		return "Claude Pro"
-	}
 }
 
 func (s *poolSimulator) authFileLocked(account *poolAccount, now time.Time) gin.H {
@@ -588,17 +600,10 @@ func (s *poolSimulator) profile(authIndex string) (gin.H, bool) {
 	}
 	profileAccount := gin.H{
 		"uuid":           fmt.Sprintf("%08x-%04x-4%03x-8%03x-%012x", account.ID*104729, account.ID, account.ID%4096, account.ID%4096, account.ID*99991),
-		"has_claude_max": account.Plan == "Claude Max",
-		"has_claude_pro": account.Plan == "Claude Pro",
+		"has_claude_max": true,
+		"has_claude_pro": false,
 	}
 	profile := gin.H{"account": profileAccount}
-	if account.Plan == "Claude Team" {
-		profile["organization"] = gin.H{
-			"uuid":                fmt.Sprintf("org_%016x", account.ID*32452843),
-			"organization_type":   "claude_team",
-			"subscription_status": "active",
-		}
-	}
 	return profile, true
 }
 
