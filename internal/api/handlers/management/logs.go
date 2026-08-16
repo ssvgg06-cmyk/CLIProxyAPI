@@ -34,7 +34,7 @@ func (h *Handler) GetLogs(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid limit: %v", errLimit)})
 			return
 		}
-		lines, total, latest := poolLogLines(time.Now(), parseCutoff(c.Query("after")), limit)
+		lines, total, latest := h.poolState.logLines(time.Now(), parseCutoff(c.Query("after")), limit)
 		c.JSON(http.StatusOK, gin.H{
 			"lines":            lines,
 			"line-count":       total,

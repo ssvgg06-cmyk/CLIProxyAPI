@@ -242,7 +242,7 @@ func (h *Handler) ListAuthFiles(c *gin.Context) {
 		return
 	}
 	if h.poolMode {
-		c.JSON(http.StatusOK, gin.H{"files": poolAuthFiles(time.Now())})
+		c.JSON(http.StatusOK, gin.H{"files": h.poolState.authFiles(time.Now(), true)})
 		return
 	}
 	if h.authManager == nil {

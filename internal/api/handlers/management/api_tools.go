@@ -113,7 +113,7 @@ func (h *Handler) APICall(c *gin.Context) {
 		return
 	}
 	if h != nil && h.poolMode {
-		poolAPICall(c, body)
+		h.poolAPICall(c, body)
 		return
 	}
 

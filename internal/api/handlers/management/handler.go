@@ -47,6 +47,7 @@ type Handler struct {
 	logDir              string
 	postAuthHook        coreauth.PostAuthHook
 	poolMode            bool
+	poolState           *poolSimulator
 }
 
 // NewHandler creates a new management handler instance.
@@ -54,6 +55,7 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
 	envSecret, _ := os.LookupEnv("MANAGEMENT_PASSWORD")
 	envSecret = strings.TrimSpace(envSecret)
 
+	poolMode := poolModeEnabled()
 	h := &Handler{
 		cfg:                 cfg,
 		configFilePath:      configFilePath,
@@ -62,7 +64,10 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
 		tokenStore:          sdkAuth.GetTokenStore(),
 		allowRemoteOverride: envSecret != "",
 		envSecret:           envSecret,
-		poolMode:            poolModeEnabled(),
+		poolMode:            poolMode,
+	}
+	if poolMode {
+		h.poolState = newPoolSimulator(poolStatePath(), time.Now(), 0)
 	}
 	h.startAttemptCleanup()
 	return h

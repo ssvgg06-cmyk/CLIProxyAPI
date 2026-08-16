@@ -14,6 +14,7 @@ services:
     command: ["./CLIProxyAPI", "--config", "/pool/config.yaml", "--local-model"]
     environment:
       CPA_POOL_MODE: "true"
+      CPA_POOL_STATE_PATH: "/pool/state/pool-state.json"
       MANAGEMENT_PASSWORD: "${CPA_POOL_PASSWORD}"
     ports:
       - "127.0.0.1:18317:8317"
@@ -21,6 +22,7 @@ services:
       - cpa-pool-network
     volumes:
       - ./config.yaml:/pool/config.yaml:ro
+      - cpa-pool-state:/pool/state
     tmpfs:
       - /tmp/cpa-pool:mode=700
       - /pool/static:mode=755
@@ -35,3 +37,6 @@ networks:
   cpa-pool-network:
     external:
       name: new-api-stack_app
+
+volumes:
+  cpa-pool-state:
