@@ -86,6 +86,42 @@ func TestHealthz(t *testing.T) {
 	})
 }
 
+func TestPoolPublicSurfaceIsManagementOnly(t *testing.T) {
+	for _, path := range []string{"/healthz", "/management.html", "/pool-logs.html", "/v0/management", "/v0/management/logs"} {
+		if !poolPublicPathAllowed(path) {
+			t.Fatalf("pool path %q should be available", path)
+		}
+	}
+	for _, path := range []string{"/", "/v1/models", "/v1/messages", "/backend-api/codex/responses", "/anthropic/callback"} {
+		if poolPublicPathAllowed(path) {
+			t.Fatalf("pool path %q must be blocked", path)
+		}
+	}
+}
+
+func TestDockerBuildContextExcludesDeploymentSecrets(t *testing.T) {
+	data, errRead := os.ReadFile(filepath.Join("..", "..", ".dockerignore"))
+	if errRead != nil {
+		t.Fatalf("read repository .dockerignore: %v", errRead)
+	}
+	patterns := make(map[string]bool)
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			patterns[line] = true
+		}
+	}
+	for _, required := range []string{
+		".env", ".env.*", "**/.env", "**/.env.*",
+		"pool/secrets/", "**/secrets/", "**/secrets/**",
+		"pool/state/", "**/pool-state.json", "**/newapi-log-cache.json.gz",
+	} {
+		if !patterns[required] {
+			t.Errorf(".dockerignore must exclude %q", required)
+		}
+	}
+}
+
 func TestManagementUsageRequiresManagementAuthAndPopsArray(t *testing.T) {
 	t.Setenv("MANAGEMENT_PASSWORD", "test-management-key")
 

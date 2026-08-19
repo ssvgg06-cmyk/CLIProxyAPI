@@ -1,0 +1,10 @@
+secrets
+secrets/**
+.env
+.env.*
+sql
+docker-compose.yml
+Caddyfile.snippet
+README.md
+.git
+*.log

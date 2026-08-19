@@ -5,6 +5,9 @@ cli-proxy-api
 # Configuration
 config.yaml
 .env
+.env.*
+**/.env
+**/.env.*
 
 # Generated content
 bin/*
@@ -24,6 +27,14 @@ static/*
 # Authentication data
 auths/*
 !auths/.gitkeep
+pool/secrets/
+pool/log-bridge/secrets/
+**/secrets/
+
+# Runtime pool state and the synchronized New API log cache.
+pool/state/
+**/pool-state.json
+**/newapi-log-cache.json.gz
 
 # Documentation
 docs/*

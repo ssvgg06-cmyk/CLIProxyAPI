@@ -1,0 +1,43 @@
+services:
+  cpa-log-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cpa-log-bridge:local
+    container_name: cpa-log-bridge
+    restart: unless-stopped
+    read_only: true
+    user: "65532:65532"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    environment:
+      CPA_LOG_BRIDGE_LISTEN_ADDR: ":8080"
+      CPA_LOG_BRIDGE_DATABASE_URL_FILE: /run/secrets/database_url
+      CPA_LOG_BRIDGE_BEARER_TOKEN_FILE: /run/secrets/bearer_token
+    volumes:
+      - type: bind
+        source: ./secrets/database_url
+        target: /run/secrets/database_url
+        read_only: true
+      - type: bind
+        source: ./secrets/bearer_token
+        target: /run/secrets/bearer_token
+        read_only: true
+    expose:
+      - "8080"
+    networks:
+      - new_api
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  new_api:
+    external: true
+    name: new-api-stack_app

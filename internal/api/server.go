@@ -5,6 +5,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"crypto/tls"
@@ -48,6 +49,8 @@ import (
 )
 
 const oauthCallbackSuccessHTML = `<html><head><meta charset="utf-8"><title>Authentication successful</title><script>setTimeout(function(){window.close();},5000);</script></head><body><h1>Authentication successful!</h1><p>You can close this window.</p><p>This window will close automatically in 5 seconds.</p></body></html>`
+
+const poolLogConsoleLinkHTML = `<a id="cpa-pool-log-console-link" href="/pool-logs.html" style="position:fixed;right:24px;bottom:24px;z-index:50;padding:10px 14px;border-radius:8px;background:#1f6feb;color:#fff;font:600 14px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;text-decoration:none;box-shadow:0 4px 8px rgba(0,0,0,.22)" aria-label="Open associated request logs">关联日志</a>`
 
 type serverOptionConfig struct {
 	extraMiddleware      []gin.HandlerFunc
@@ -288,6 +291,7 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 		s.mgmt.SetPostAuthHook(optionState.postAuthHook)
 	}
 	s.localPassword = optionState.localPassword
+	engine.Use(s.poolSurfaceMiddleware())
 
 	// Home heartbeat gate: when home is enabled, block all endpoints with 503 until the
 	// subscribe-config heartbeat connection is healthy.
@@ -335,6 +339,24 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	return s
 }
 
+func poolPublicPathAllowed(path string) bool {
+	return path == "/healthz" || path == "/management.html" || path == "/pool-logs.html" ||
+		path == "/v0/management" || strings.HasPrefix(path, "/v0/management/")
+}
+
+// poolSurfaceMiddleware makes the presentation instance management-only. It
+// prevents a committed or accidentally configured API key from exposing model,
+// inference, websocket, or OAuth callback routes on the public pool domain.
+func (s *Server) poolSurfaceMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if s == nil || s.mgmt == nil || !s.mgmt.PoolMode() || poolPublicPathAllowed(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
+		c.AbortWithStatus(http.StatusNotFound)
+	}
+}
+
 func (s *Server) homeHeartbeatMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if s == nil || s.cfg == nil || !s.cfg.Home.Enabled {
@@ -343,7 +365,7 @@ func (s *Server) homeHeartbeatMiddleware() gin.HandlerFunc {
 		}
 		if c != nil && c.Request != nil {
 			path := c.Request.URL.Path
-			if strings.HasPrefix(path, "/v0/management/") || path == "/v0/management" || path == "/management.html" {
+			if strings.HasPrefix(path, "/v0/management/") || path == "/v0/management" || path == "/management.html" || path == "/pool-logs.html" {
 				c.Next()
 				return
 			}
@@ -372,6 +394,8 @@ func (s *Server) setupRoutes() {
 	s.engine.HEAD("/healthz", healthzHandler)
 
 	s.engine.GET("/management.html", s.serveManagementControlPanel)
+	// Credential pool log console; reports 404 unless pool mode is enabled.
+	s.engine.GET("/pool-logs.html", s.mgmt.PoolLogConsole)
 	openaiHandlers := openai.NewOpenAIAPIHandler(s.handlers)
 	geminiHandlers := gemini.NewGeminiAPIHandler(s.handlers)
 	geminiCLIHandlers := gemini.NewGeminiCLIAPIHandler(s.handlers)
@@ -612,6 +636,7 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.DELETE("/logs", s.mgmt.DeleteLogs)
 		mgmt.GET("/request-error-logs", s.mgmt.GetRequestErrorLogs)
 		mgmt.GET("/request-error-logs/:name", s.mgmt.DownloadRequestErrorLog)
+		mgmt.GET("/request-log-by-id", s.mgmt.GetRequestLogByID)
 		mgmt.GET("/request-log-by-id/:id", s.mgmt.GetRequestLogByID)
 		mgmt.GET("/request-log", s.mgmt.GetRequestLog)
 		mgmt.PUT("/request-log", s.mgmt.PutRequestLog)
@@ -690,6 +715,7 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.DELETE("/oauth-model-alias", s.mgmt.DeleteOAuthModelAlias)
 
 		mgmt.GET("/auth-files", s.mgmt.ListAuthFiles)
+		mgmt.GET("/pool-log-account/:auth_index", s.mgmt.GetPoolLogAccount)
 		mgmt.GET("/auth-files/models", s.mgmt.GetAuthFileModels)
 		mgmt.GET("/model-definitions/:channel", s.mgmt.GetStaticModelDefinitions)
 		mgmt.GET("/auth-files/download", s.mgmt.DownloadAuthFile)
@@ -755,6 +781,25 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		}
 	}
 
+	if s.mgmt != nil && s.mgmt.PoolMode() {
+		data, errRead := os.ReadFile(filePath)
+		if errRead != nil {
+			log.WithError(errRead).Error("failed to read management control panel asset")
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		if !bytes.Contains(data, []byte(`id="cpa-pool-log-console-link"`)) {
+			marker := []byte("</body>")
+			if bytes.Contains(data, marker) {
+				data = bytes.Replace(data, marker, append([]byte(poolLogConsoleLinkHTML), marker...), 1)
+			} else {
+				data = append(data, []byte(poolLogConsoleLinkHTML)...)
+			}
+		}
+		c.Header("Cache-Control", "no-store")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+		return
+	}
 	c.File(filePath)
 }
 

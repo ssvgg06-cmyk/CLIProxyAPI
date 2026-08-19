@@ -34,11 +34,60 @@ func (h *Handler) GetLogs(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid limit: %v", errLimit)})
 			return
 		}
-		lines, total, latest := h.poolState.logLines(time.Now(), parseCutoff(c.Query("after")), limit)
+		filter, errFilter := poolLogFilterFromQuery(c, limit)
+		if errFilter != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": errFilter.Error()})
+			return
+		}
+		if filter.RequestID != "" && !validPoolRequestID(filter.RequestID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request_id"})
+			return
+		}
+		now := time.Now()
+		incrementalCutoff := int64(0)
+		if strings.TrimSpace(c.Query("from")) == "" {
+			incrementalCutoff = parseCutoff(c.Query("after"))
+		}
+		if strings.EqualFold(strings.TrimSpace(c.Query("format")), "json") {
+			entries, total, latest, truncated, errQuery := h.poolState.queryLogsWithContext(c.Request.Context(), now, filter)
+			if errQuery != nil && filter.RequestID != "" && len(entries) == 0 {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error":  "New API log source unavailable",
+					"source": h.poolState.logSourceMetadata(now),
+				})
+				return
+			}
+			if total == 0 && incrementalCutoff > 0 {
+				latest = incrementalCutoff
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"entries":          poolLogEntriesPayload(entries),
+				"line-count":       total,
+				"latest-timestamp": latest,
+				"truncated":        truncated,
+				"clock":            poolTimezonePayload(now),
+				"source":           h.poolState.logSourceMetadata(now),
+			})
+			return
+		}
+		lines, total, latest, truncated, errQuery := h.poolState.logLinesWithContext(c.Request.Context(), now, filter)
+		if errQuery != nil && filter.RequestID != "" && len(lines) == 0 {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":  "New API log source unavailable",
+				"source": h.poolState.logSourceMetadata(now),
+			})
+			return
+		}
+		if total == 0 && incrementalCutoff > 0 {
+			latest = incrementalCutoff
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"lines":            lines,
 			"line-count":       total,
 			"latest-timestamp": latest,
+			"truncated":        truncated,
+			"clock":            poolTimezonePayload(now),
+			"source":           h.poolState.logSourceMetadata(now),
 		})
 		return
 	}
@@ -167,7 +216,7 @@ func (h *Handler) GetRequestErrorLogs(c *gin.Context) {
 		return
 	}
 	if h.poolMode {
-		c.JSON(http.StatusOK, gin.H{"files": poolErrorLogFiles(time.Now())})
+		c.JSON(http.StatusOK, gin.H{"files": h.poolErrorLogFiles(time.Now())})
 		return
 	}
 	if h.cfg == nil {
@@ -235,7 +284,11 @@ func (h *Handler) GetRequestLogByID(c *gin.Context) {
 		return
 	}
 	if h.poolMode {
-		poolDownloadRequestLog(c, strings.TrimSpace(c.Param("id")))
+		requestID := c.Param("id")
+		if requestID == "" {
+			requestID = c.Query("id")
+		}
+		h.poolDownloadRequestLog(c, requestID)
 		return
 	}
 	if h.cfg == nil {
@@ -326,7 +379,7 @@ func (h *Handler) DownloadRequestErrorLog(c *gin.Context) {
 		return
 	}
 	if h.poolMode {
-		poolDownloadErrorLog(c, strings.TrimSpace(c.Param("name")))
+		h.poolDownloadErrorLog(c, strings.TrimSpace(c.Param("name")))
 		return
 	}
 	if h.cfg == nil {

@@ -15,13 +15,17 @@ services:
     environment:
       CPA_POOL_MODE: "true"
       CPA_POOL_STATE_PATH: "/pool/state/pool-state.json"
-      MANAGEMENT_PASSWORD: "${CPA_POOL_PASSWORD}"
+      CPA_POOL_LOG_SOURCE_URL: "https://nlapi.cc/internal/cpa-pool/logs"
+      CPA_POOL_LOG_SOURCE_TOKEN_FILE: "/run/secrets/newapi_log_bridge_token"
+      CPA_POOL_LOG_CACHE_PATH: "/pool/state/newapi-log-cache.json.gz"
+      MANAGEMENT_PASSWORD: "${CPA_POOL_PASSWORD:?CPA_POOL_PASSWORD is required}"
     ports:
       - "127.0.0.1:18317:8317"
     networks:
       - cpa-pool-network
     volumes:
       - ./config.yaml:/pool/config.yaml:ro
+      - ${CPA_POOL_LOG_SOURCE_TOKEN_PATH:-./secrets/newapi_log_bridge_token}:/run/secrets/newapi_log_bridge_token:ro
       - cpa-pool-state:/pool/state
     tmpfs:
       - /tmp/cpa-pool:mode=700

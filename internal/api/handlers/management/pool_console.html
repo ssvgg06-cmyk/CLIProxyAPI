@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Credential Pool Log Console</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel-2: #1c2129; --line: #30363d;
+    --text: #e6edf3; --muted: #9da7b3; --accent: #4493f8; --accent-dim: #1f6feb;
+    --ok: #3fb950; --warn: #d29922; --err: #f85149; --radius: 6px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 12px 20px;
+    border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 20;
+  }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: .2px; }
+  header .node { font: 12px var(--mono); color: var(--muted); }
+  header .spacer { flex: 1; }
+  .toolbar { padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+  .row + .row { margin-top: 10px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  input, select, button {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 9px; outline: none;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible {
+    border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  input[type=datetime-local] { font: 13px var(--mono); }
+  .mono, input.mono { font-family: var(--mono); }
+  button { cursor: pointer; background: var(--panel-2); transition: background .12s, border-color .12s; }
+  button:hover { background: #262c36; border-color: #484f58; }
+  button.primary { background: var(--accent-dim); border-color: var(--accent-dim); font-weight: 500; }
+  button.primary:hover { background: var(--accent); border-color: var(--accent); }
+  button.chip { padding: 4px 10px; font-size: 12px; border-radius: 999px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .status { padding: 8px 20px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .status .warnpill { color: var(--warn); border: 1px solid var(--warn); border-radius: 999px; padding: 1px 9px; font-size: 11px; }
+  .sourcepill { border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; font-size: 11px; }
+  .sourcepill.ok { color: var(--ok); border-color: #2f6f3e; }
+  .sourcepill.stale { color: var(--warn); border-color: #6b5520; }
+  .sourcepill.down { color: var(--err); border-color: #6e2a31; }
+  .wrap { display: grid; grid-template-columns: 1fr 0; }
+  .wrap.detail-open { grid-template-columns: 1fr 380px; }
+  main { overflow-x: auto; min-width: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    position: sticky; top: 0; background: var(--panel-2); text-align: left; font-weight: 600;
+    font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+    padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; z-index: 5;
+  }
+  tbody td { padding: 6px 10px; border-bottom: 1px solid #21262d; white-space: nowrap; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #1a1f27; }
+  tbody tr.sel { background: #1f2937; outline: 1px solid var(--accent); outline-offset: -1px; }
+  td.t, td.rid, td.acct { font-family: var(--mono); font-size: 12px; }
+  td.acct { color: var(--accent); }
+  td.num { text-align: right; font-family: var(--mono); font-size: 12px; }
+  .lvl { font: 11px var(--mono); padding: 1px 7px; border-radius: 999px; border: 1px solid; }
+  .lvl.INFO { color: var(--ok); border-color: #21402a; background: #10241733; }
+  .lvl.WARN { color: var(--warn); border-color: #45391c; background: #2b210933; }
+  .lvl.ERROR { color: var(--err); border-color: #4a2225; background: #2d111333; }
+  .st200 { color: var(--ok); } .st429 { color: var(--warn); } .st5 { color: var(--err); }
+  aside { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; min-width: 0; }
+  aside .inner { padding: 16px; }
+  aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 0 0 12px; }
+  aside h2 + .kv { margin-top: -4px; }
+  .kv { display: grid; grid-template-columns: 108px 1fr; gap: 6px 10px; font-size: 12px; margin-bottom: 18px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; font-family: var(--mono); word-break: break-all; }
+  .card { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 14px; }
+  .card.miss { border-color: var(--err); color: var(--err); }
+  .raw { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; font: 11px/1.6 var(--mono); white-space: pre-wrap; word-break: break-all; color: var(--muted); }
+  .empty { padding: 60px 20px; text-align: center; color: var(--muted); }
+  .badge { display: inline-block; font: 11px var(--mono); padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.active { color: var(--ok); border-color: #21402a; }
+  .badge.error { color: var(--err); border-color: #4a2225; }
+  .badge.disabled { color: var(--muted); }
+  .tzl { color: var(--muted); font-weight: 400; }
+  .gate { max-width: 380px; margin: 100px auto; padding: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  .gate h1 { font-size: 16px; margin: 0 0 6px; }
+  .gate p { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  .gate input { width: 100%; margin-bottom: 12px; }
+  .gate button { width: 100%; }
+  .err-text { color: var(--err); font-size: 12px; margin-top: 10px; }
+  .backlink { color: var(--text); text-decoration: none; border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 9px; }
+  .backlink:hover { border-color: var(--accent); }
+  .hide { display: none !important; }
+  @media (max-width: 900px) {
+    .wrap.detail-open { grid-template-columns: 1fr; }
+    .wrap.detail-open aside { display: block; border-left: 0; border-top: 1px solid var(--line); }
+    aside { display: none; }
+    .field { min-width: min(100%, 220px) !important; }
+    header { padding-inline: 12px; }
+    .toolbar, .status { padding-inline: 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div id="gate" class="gate">
+  <h1>Credential Pool Log Console</h1>
+  <p>Enter the management password to continue.</p>
+  <input id="key" type="password" placeholder="Management password" autocomplete="current-password">
+  <button class="primary" id="unlock">Unlock</button>
+  <div id="gateErr" class="err-text hide"></div>
+</div>
+
+<div id="app" class="hide">
+  <header>
+    <h1>Credential Pool Log Console</h1>
+    <span class="node" id="nodeInfo"></span><span class="node" id="tzInfo"></span>
+    <span class="spacer"></span>
+    <a class="backlink" href="/management.html#/logs">Management</a>
+    <button id="lock">Lock</button>
+  </header>
+
+  <div class="toolbar">
+    <div class="row">
+      <div class="field">
+        <label for="from">Start <span class="tzl">(server time)</span></label>
+        <input type="datetime-local" id="from" step="1">
+      </div>
+      <div class="field">
+        <label for="to">End <span class="tzl">(server time)</span></label>
+        <input type="datetime-local" id="to" step="1">
+      </div>
+      <div class="field">
+        <label for="level">Level</label>
+        <select id="level">
+          <option value="">All</option>
+          <option>INFO</option><option>WARN</option><option>ERROR</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="limit">Limit</label>
+        <input type="number" id="limit" value="500" min="1" max="20000" style="width:92px">
+      </div>
+      <button class="primary" id="search">Search</button>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:1; min-width:320px">
+        <label for="rid">Request ID (exact, searches all 90 days)</label>
+        <input class="mono" id="rid" placeholder="Paste a New API request or upstream request ID" spellcheck="false">
+      </div>
+      <div class="field" style="flex:1; min-width:220px">
+        <label for="q">Filter (account / email / auth_index / model)</label>
+        <input class="mono" id="q" placeholder="substring match" spellcheck="false">
+      </div>
+    </div>
+    <div class="row">
+      <div class="chips">
+        <button class="chip" data-preset="15m">15m</button>
+        <button class="chip" data-preset="1h">1h</button>
+        <button class="chip" data-preset="6h">6h</button>
+        <button class="chip" data-preset="24h">24h</button>
+        <button class="chip" data-preset="7d">7d</button>
+        <button class="chip" data-preset="30d">30d</button>
+        <button class="chip" data-preset="90d">90d</button>
+        <button class="chip" id="clear">Clear filters</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status" aria-live="polite">
+    <span id="count">Ready</span>
+    <span id="elapsed"></span>
+    <span id="sourceState" class="sourcepill down">New API source not checked</span>
+    <span id="trunc" class="warnpill hide">truncated - narrow the range or raise the limit</span>
+  </div>
+
+  <div class="wrap" id="wrap">
+    <main>
+      <table>
+        <thead><tr>
+          <th>Time <span class="tzl" style="text-transform:none;letter-spacing:0">(server)</span></th><th>Level</th><th>Account</th><th>Model</th>
+          <th style="text-align:right">Status</th><th style="text-align:right">Latency</th><th>Request ID</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="empty" class="empty">Choose a range and search.</div>
+    </main>
+    <aside id="detail"><div class="inner" id="detailInner"></div></aside>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var API = "/v0/management";
+  // Keep the management password in memory only. Same-origin management assets
+  // must never be able to recover it from persistent browser storage.
+  var key = "";
+  var rows = [];
+  var selected = -1;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // The server renders log lines on its own wall clock. Request identifiers are
+  // opaque values copied from New API. UTC is shown alongside in the detail pane.
+  var clock = { timezone: "UTC", utc_offset_seconds: 0, utc_offset: "+00:00" };
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function shift(unix) { return new Date((unix + clock.utc_offset_seconds) * 1000); }
+  function stamp(d, sep) {
+    return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()) +
+      sep + pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + ":" + pad(d.getUTCSeconds());
+  }
+  function toLocalInput(unix) { return stamp(shift(unix), "T"); }
+  function fromInput(value) {
+    if (!value) { return null; }
+    return Math.floor(Date.parse(value + "Z") / 1000) - clock.utc_offset_seconds;
+  }
+  function fmtTime(unix) { return stamp(shift(unix), " "); }
+  function fmtUTC(unix) { return stamp(new Date(unix * 1000), " ") + " UTC"; }
+  function applyClock(payload) {
+    if (!payload) { return; }
+    clock = payload;
+    var label = clock.timezone + " (UTC" + clock.utc_offset + ")";
+    $("tzInfo").textContent = "clock " + label;
+    var suffix = clock.utc_offset_seconds === 0 ? "(UTC)" : "(UTC" + clock.utc_offset + ")";
+    Array.prototype.forEach.call(document.querySelectorAll(".tzl"), function (node) {
+      node.textContent = suffix;
+    });
+  }
+  function fmtLatency(ms) {
+    if (ms == null) { return ""; }
+    if (ms < 1000) { return ms + "ms"; }
+    return (ms / 1000).toFixed(ms < 10000 ? 2 : 1) + "s";
+  }
+  function statusClass(code) {
+    if (code === 200) { return "st200"; }
+    if (code === 429) { return "st429"; }
+    return "st5";
+  }
+
+  function request(path) {
+    return fetch(API + path, { headers: { Authorization: "Bearer " + key } }).then(function (res) {
+      if (res.status === 401 || res.status === 403) { throw new Error("unauthorized"); }
+      if (res.ok) { return res; }
+      return res.json().catch(function () { return {}; }).then(function (payload) {
+        var message = payload.error;
+        if (message && typeof message === "object") { message = message.message || message.code; }
+        var err = new Error(message || ("HTTP " + res.status));
+        err.status = res.status;
+        err.payload = payload;
+        throw err;
+      });
+    });
+  }
+  function getJSON(path) { return request(path).then(function (r) { return r.json(); }); }
+
+  function applySource(source) {
+    var node = $("sourceState");
+    if (!source) {
+      node.className = "sourcepill down";
+      node.textContent = "New API source unavailable";
+      return;
+    }
+    var lag = source.lag_seconds == null ? source.source_lag_seconds : source.lag_seconds;
+    var suffix = lag == null ? "" : " · " + lag + "s since sync";
+    if (source.stale) {
+      node.className = "sourcepill stale";
+      node.textContent = "New API cached/stale" + suffix;
+      return;
+    }
+    if (source.available === false || source.status === "not_configured" || source.status === "configuration_error") {
+      node.className = "sourcepill down";
+      node.textContent = "New API source " + String(source.status || "unavailable").replace(/_/g, " ");
+      return;
+    }
+    node.className = "sourcepill ok";
+    node.textContent = "New API live" + suffix;
+  }
+
+  function setPreset(span) {
+    var units = { m: 60, h: 3600, d: 86400 };
+    var seconds = parseInt(span, 10) * units[span.slice(-1)];
+    var now = Math.floor(Date.now() / 1000);
+    $("from").value = toLocalInput(now - seconds);
+    $("to").value = toLocalInput(now);
+  }
+
+  function search() {
+    var params = [];
+    var rid = $("rid").value;
+    if (rid) {
+      params.push("request_id=" + encodeURIComponent(rid));
+    } else {
+      var from = fromInput($("from").value);
+      var to = fromInput($("to").value);
+      if (from) { params.push("from=" + from); }
+      if (to) { params.push("to=" + to); }
+    }
+    var q = $("q").value.trim();
+    if (q) { params.push("q=" + encodeURIComponent(q)); }
+    if ($("level").value) { params.push("level=" + $("level").value); }
+    params.push("limit=" + ($("limit").value || 500));
+    params.push("format=json");
+
+    $("count").textContent = "Searching...";
+    $("elapsed").textContent = "";
+    var started = performance.now();
+
+    getJSON("/logs?" + params.join("&")).then(function (data) {
+      var took = Math.round(performance.now() - started);
+      applyClock(data.clock);
+      applySource(data.source);
+      rows = (data.entries || []).slice().reverse();
+      render();
+      var total = data["line-count"] == null ? rows.length : data["line-count"];
+      $("count").textContent = rows.length + " shown · " + total + " matched";
+      $("elapsed").textContent = took + " ms";
+      $("trunc").classList.toggle("hide", !data.truncated);
+    }).catch(function (err) {
+      if (err.message === "unauthorized") { return lock("Session expired, sign in again."); }
+      if (err.payload) { applySource(err.payload.source); }
+      $("count").textContent = "Query failed: " + err.message;
+    });
+  }
+
+  function render() {
+    var body = $("rows");
+    body.textContent = "";
+    $("empty").classList.toggle("hide", rows.length > 0);
+    if (!rows.length) {
+      $("empty").textContent = "No records matched.";
+      return;
+    }
+    var frag = document.createDocumentFragment();
+    rows.forEach(function (entry, index) {
+      var tr = document.createElement("tr");
+      tr.dataset.index = index;
+      tr.setAttribute("role", "button");
+      tr.setAttribute("aria-selected", "false");
+      function cell(text, cls) {
+        var td = document.createElement("td");
+        if (cls) { td.className = cls; }
+        td.textContent = text == null ? "" : text;
+        return td;
+      }
+      tr.appendChild(cell(fmtTime(entry.timestamp), "t"));
+      var lvl = document.createElement("td");
+      var tag = document.createElement("span");
+      tag.className = "lvl " + entry.level;
+      tag.textContent = entry.level;
+      lvl.appendChild(tag);
+      tr.appendChild(lvl);
+      if (entry.request_id) {
+        tr.appendChild(cell(entry.account || "unmapped", "acct"));
+        tr.appendChild(cell(entry.model, "mono"));
+        var st = cell(entry.status, "num " + statusClass(entry.status));
+        tr.appendChild(st);
+        tr.appendChild(cell(fmtLatency(entry.latency_ms), "num"));
+        tr.appendChild(cell(entry.request_id, "rid"));
+      } else {
+        var msg = cell(entry.message);
+        msg.colSpan = 5;
+        msg.style.color = "var(--muted)";
+        msg.style.whiteSpace = "normal";
+        tr.appendChild(msg);
+      }
+      tr.tabIndex = 0;
+      tr.addEventListener("click", function () { select(index); });
+      tr.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          select(index);
+        }
+      });
+      frag.appendChild(tr);
+    });
+    body.appendChild(frag);
+  }
+
+  function select(index) {
+    selected = index;
+    Array.prototype.forEach.call($("rows").children, function (tr, i) {
+      tr.classList.toggle("sel", i === index);
+      tr.setAttribute("aria-selected", i === index ? "true" : "false");
+    });
+    showDetail(rows[index]);
+  }
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) { node.className = cls; }
+    if (text != null) { node.textContent = text; }
+    return node;
+  }
+  function kv(pairs) {
+    var dl = el("dl", "kv");
+    pairs.forEach(function (pair) {
+      if (pair[1] == null || pair[1] === "") { return; }
+      dl.appendChild(el("dt", null, pair[0]));
+      dl.appendChild(el("dd", null, pair[1]));
+    });
+    return dl;
+  }
+
+  function showDetail(entry) {
+    var box = $("detailInner");
+    box.textContent = "";
+    $("wrap").classList.add("detail-open");
+
+    var close = el("button", null, "Close details");
+    close.style.marginBottom = "14px";
+    close.addEventListener("click", function () {
+      $("wrap").classList.remove("detail-open");
+      selected = -1;
+      Array.prototype.forEach.call($("rows").children, function (tr) {
+        tr.classList.remove("sel");
+        tr.setAttribute("aria-selected", "false");
+      });
+    });
+    box.appendChild(close);
+
+    box.appendChild(el("h2", null, "Record"));
+    box.appendChild(kv([
+      ["Time " + clock.timezone, fmtTime(entry.timestamp)],
+      ["Time UTC", fmtUTC(entry.timestamp)],
+      ["Unix", entry.timestamp],
+      ["Source", entry.source],
+      ["Account mapping", entry.mapping_status],
+      ["Level", entry.level],
+      ["Message", entry.message],
+      ["Model", entry.model],
+      ["Status", entry.status],
+      ["Latency", fmtLatency(entry.latency_ms)],
+      ["Request ID", entry.request_id],
+      ["Upstream ID", entry.upstream_request_id],
+      ["Auth index", entry.auth_index]
+    ]));
+
+    if (entry.request_id) {
+      var copy = el("button", null, "Copy request ID");
+      copy.addEventListener("click", function () {
+        navigator.clipboard.writeText(entry.request_id).then(function () {
+          copy.textContent = "Copied";
+          setTimeout(function () { copy.textContent = "Copy request ID"; }, 1200);
+        });
+      });
+      var dl = el("button", null, "Download request log");
+      dl.style.marginLeft = "8px";
+      dl.addEventListener("click", function () { downloadLog(entry.request_id); });
+      var actions = el("div");
+      actions.style.marginBottom = "18px";
+      actions.appendChild(copy);
+      actions.appendChild(dl);
+      box.appendChild(actions);
+
+      box.appendChild(el("h2", null, "Associated credential"));
+      var card = el("div", "card", entry.auth_index ? "Looking up " + entry.auth_index + " ..." : "No historical account was active at this time.");
+      box.appendChild(card);
+      if (!entry.auth_index) {
+        card.className = "card miss";
+      } else {
+        lookupAccount(entry.auth_index).then(function (file) {
+          card.textContent = "";
+          if (!file) {
+            card.className = "card miss";
+            card.textContent = "The associated account is outside the retained account history.";
+            return;
+          }
+          var name = el("div", "mono");
+          name.style.marginBottom = "10px";
+          name.style.wordBreak = "break-all";
+          name.appendChild(document.createTextNode(file.name + " "));
+          name.appendChild(el("span", "badge " + file.status, file.status));
+          card.appendChild(name);
+          card.appendChild(kv([
+            ["Email", file.email],
+            ["Plan", file.account_type || file.plan],
+            ["Account", file.account],
+            ["Auth index", file.auth_index],
+            ["Priority", file.priority],
+            ["Success", file.success],
+            ["Failed", file.failed],
+            ["Joined", file.first_seen],
+            ["Retired", file.retired_at],
+            ["Current", file.current],
+            ["Note", file.status_message]
+          ]));
+        });
+      }
+    }
+
+    box.appendChild(el("h2", null, "Raw line"));
+    box.appendChild(el("div", "raw", entry.line));
+  }
+
+  function lookupAccount(authIndex) {
+    return getJSON("/pool-log-account/" + encodeURIComponent(authIndex)).then(function (data) {
+      return data.account || data;
+    }).catch(function () { return null; });
+  }
+
+  function downloadLog(requestID) {
+    request("/request-log-by-id?id=" + encodeURIComponent(requestID)).then(function (res) {
+      return res.text();
+    }).then(function (text) {
+      var blob = new Blob([text], { type: "text/plain" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "request-" + requestID.replace(/[^A-Za-z0-9._-]/g, "_") + ".log";
+      a.click();
+      URL.revokeObjectURL(url);
+    }).catch(function (err) { alert("Download failed: " + err.message); });
+  }
+
+  function unlock() {
+    key = $("key").value.trim();
+    if (!key) { return; }
+    $("gateErr").classList.add("hide");
+    getJSON("/logs?limit=1&format=json").then(function (probe) {
+      $("gate").classList.add("hide");
+      $("app").classList.remove("hide");
+      $("key").value = "";
+      applyClock(probe.clock);
+      applySource(probe.source);
+      $("nodeInfo").textContent = "associated request logs";
+    }).then(function () {
+      setPreset("1h");
+      search();
+    }).catch(function (err) {
+      $("gateErr").textContent = err.message === "unauthorized" ? "Wrong password." : "Failed: " + err.message;
+      $("gateErr").classList.remove("hide");
+    });
+  }
+
+  function lock(message) {
+    key = "";
+    $("key").value = "";
+    $("app").classList.add("hide");
+    $("gate").classList.remove("hide");
+    if (message) {
+      $("gateErr").textContent = message;
+      $("gateErr").classList.remove("hide");
+    }
+  }
+
+  $("unlock").addEventListener("click", unlock);
+  $("key").addEventListener("keydown", function (e) { if (e.key === "Enter") { unlock(); } });
+  $("lock").addEventListener("click", function () { lock(""); });
+  $("search").addEventListener("click", search);
+  $("clear").addEventListener("click", function () {
+    $("rid").value = ""; $("q").value = ""; $("level").value = "";
+  });
+  ["rid", "q", "from", "to", "limit"].forEach(function (id) {
+    $(id).addEventListener("keydown", function (e) { if (e.key === "Enter") { search(); } });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-preset]"), function (button) {
+    button.addEventListener("click", function () {
+      $("rid").value = "";
+      setPreset(button.dataset.preset);
+      search();
+    });
+  });
+
+})();
+</script>
+</body>
+</html>

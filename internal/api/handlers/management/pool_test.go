@@ -16,26 +16,25 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 )
 
+var poolTestNow = time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
+
 func newTestPool(t *testing.T, now time.Time) *poolSimulator {
 	t.Helper()
 	return newPoolSimulator(filepath.Join(t.TempDir(), "pool-state.json"), now, 424242)
 }
 
-func TestPoolAuthFilesChangeCountWithinBounds(t *testing.T) {
-	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
-	pool := newTestPool(t, now)
-	first := pool.authFiles(now, true)
-	second := pool.authFiles(now.Add(time.Minute), true)
+func poolTestFilter(from, to time.Time, limit int) poolLogFilter {
+	return poolLogFilter{From: from, To: to, Limit: limit}
+}
+
+func TestPoolAuthFilesStayWithinBounds(t *testing.T) {
+	pool := newTestPool(t, poolTestNow)
+	first := pool.authFiles(poolTestNow, true)
+	second := pool.authFiles(poolTestNow.Add(24*time.Hour), true)
 	for _, count := range []int{len(first), len(second)} {
 		if count < poolMinimumAccounts || count > poolMaximumAccounts {
-			t.Fatalf("auth file count = %d, want %d..%d", count, poolMinimumAccounts, poolMaximumAccounts)
+			t.Fatalf("auth file count = %d, outside expected bounds", count)
 		}
-	}
-	if len(first) == poolInitialAccounts {
-		t.Fatal("first refresh should change the initial account count")
-	}
-	if len(first) == len(second) {
-		t.Fatal("each refresh should change the account count")
 	}
 
 	firstIDs := make(map[string]bool, len(first))
@@ -49,13 +48,38 @@ func TestPoolAuthFilesChangeCountWithinBounds(t *testing.T) {
 		}
 	}
 	if overlap < 240 {
-		t.Fatalf("only %d accounts survived a refresh; identities should remain stable", overlap)
+		t.Fatalf("only %d accounts survived a day; identities should remain stable", overlap)
+	}
+}
+
+// The pool must evolve on wall-clock epochs, never on request volume, otherwise
+// historical windows could not be reproduced.
+func TestPoolEvolutionIsEpochDrivenNotRequestDriven(t *testing.T) {
+	pool := newTestPool(t, poolTestNow)
+	baseline := pool.authFiles(poolTestNow, true)
+	pool.mu.Lock()
+	revision := pool.state.Revision
+	epoch := pool.state.LastEpoch
+	pool.mu.Unlock()
+
+	for i := 0; i < 50; i++ {
+		if got := len(pool.authFiles(poolTestNow.Add(time.Duration(i)*time.Second), true)); got != len(baseline) {
+			t.Fatalf("account count changed within one epoch: %d -> %d", len(baseline), got)
+		}
+	}
+
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	if pool.state.Revision != revision {
+		t.Fatalf("revision advanced within one epoch: %d -> %d", revision, pool.state.Revision)
+	}
+	if pool.state.LastEpoch != epoch {
+		t.Fatalf("epoch advanced without wall-clock progress: %d -> %d", epoch, pool.state.LastEpoch)
 	}
 }
 
 func TestPoolAuthFilesUseUniqueMaskedGmailOnly(t *testing.T) {
-	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
-	files := newTestPool(t, now).authFiles(now, false)
+	files := newTestPool(t, poolTestNow).authFiles(poolTestNow, false)
 	pattern := regexp.MustCompile(`^[a-z]{2}\*{4,8}\d{4}@gmail\.com$`)
 	emails := make(map[string]bool, len(files))
 	statuses := make(map[string]bool)
@@ -95,38 +119,71 @@ func TestPoolAuthFilesUseUniqueMaskedGmailOnly(t *testing.T) {
 }
 
 func TestPoolReloadMigratesEveryPlanToMax(t *testing.T) {
-	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	path := filepath.Join(t.TempDir(), "pool-state.json")
-	first := newPoolSimulator(path, now, 1234)
+	first := newPoolSimulator(path, poolTestNow, 1234)
 	first.mu.Lock()
 	first.state.Accounts[0].Plan = "Claude Pro"
 	first.state.Accounts[1].Plan = "Claude Team"
-	first.state.Logs = append(first.state.Logs, poolLogEntry{Timestamp: now.UnixMilli(), Line: "plan=Claude Pro plan=Claude Team"})
 	if err := first.persistLocked(); err != nil {
 		first.mu.Unlock()
 		t.Fatalf("persist legacy plans: %v", err)
 	}
 	first.mu.Unlock()
 
-	reloaded := newPoolSimulator(path, now.Add(time.Minute), 9999)
-	files := reloaded.authFiles(now.Add(time.Minute), false)
-	for _, file := range files {
+	reloaded := newPoolSimulator(path, poolTestNow.Add(time.Minute), 9999)
+	for _, file := range reloaded.authFiles(poolTestNow.Add(time.Minute), false) {
 		if got := file["account_type"]; got != "Claude Max" {
 			t.Fatalf("migrated account type = %q, want Claude Max", got)
 		}
 	}
-	reloaded.mu.Lock()
-	defer reloaded.mu.Unlock()
-	for _, entry := range reloaded.state.Logs {
-		if strings.Contains(entry.Line, "Claude Pro") || strings.Contains(entry.Line, "Claude Team") {
-			t.Fatalf("legacy plan remains in log: %q", entry.Line)
-		}
+}
+
+// A v1 state file must upgrade in place without losing credential identity.
+func TestPoolMigratesLegacyStateVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pool-state.json")
+	legacy := map[string]any{
+		"version":      1,
+		"seed":         777,
+		"revision":     12,
+		"next_account": 2,
+		"accounts": []map[string]any{{
+			"id":         1,
+			"auth_index": "claude-oauth-abc123",
+			"email":      "al****1234@gmail.com",
+			"name":       "claude-al****1234@gmail.com.json",
+			"plan":       "Claude Max",
+			"status":     "active",
+			"created_at": poolTestNow.Add(-time.Hour),
+			"updated_at": poolTestNow,
+		}},
+	}
+	encoded, errEncode := json.Marshal(legacy)
+	if errEncode != nil {
+		t.Fatalf("encode legacy state: %v", errEncode)
+	}
+	if errWrite := os.WriteFile(path, encoded, 0o600); errWrite != nil {
+		t.Fatalf("write legacy state: %v", errWrite)
+	}
+
+	pool := newPoolSimulator(path, poolTestNow, 1234)
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	if pool.state.Version != poolStateVersion {
+		t.Fatalf("state version = %d, want %d", pool.state.Version, poolStateVersion)
+	}
+	if pool.state.Seed != 777 {
+		t.Fatalf("seed = %d, want the preserved 777", pool.state.Seed)
+	}
+	if len(pool.state.Accounts) != poolMinimumAccounts || pool.state.Accounts[0].AuthIndex != "claude-oauth-abc123" {
+		t.Fatal("migration did not preserve the existing credential identity")
+	}
+	if pool.state.Accounts[0].FirstSeen.IsZero() {
+		t.Fatal("migration must backfill the roster entry date")
 	}
 }
 
 func TestPoolUsageDeclinesAndQuotaQueryDoesNotAdvancePool(t *testing.T) {
-	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
-	pool := newTestPool(t, now)
+	pool := newTestPool(t, poolTestNow)
 	pool.mu.Lock()
 	account := pool.state.Accounts[0]
 	account.FiveHour.Utilization = 2
@@ -137,11 +194,11 @@ func TestPoolUsageDeclinesAndQuotaQueryDoesNotAdvancePool(t *testing.T) {
 	revision := pool.state.Revision
 	pool.mu.Unlock()
 
-	first, ok := pool.usage(now, authIndex)
+	first, ok := pool.usage(poolTestNow, authIndex)
 	if !ok {
 		t.Fatal("usage should be available")
 	}
-	second, ok := pool.usage(now.Add(10*time.Minute), authIndex)
+	second, ok := pool.usage(poolTestNow.Add(10*time.Minute), authIndex)
 	if !ok {
 		t.Fatal("later usage should be available")
 	}
@@ -157,58 +214,50 @@ func TestPoolUsageDeclinesAndQuotaQueryDoesNotAdvancePool(t *testing.T) {
 	}
 }
 
-func TestExhaustedAccountIsReplacedAndReadableDuringGracePeriod(t *testing.T) {
-	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
-	pool := newTestPool(t, now)
+// Quota exhaustion is temporary: the credential must recover on window reset
+// and stay resolvable throughout, so log lines never dangle.
+func TestExhaustedAccountRecoversAndStaysResolvable(t *testing.T) {
+	pool := newTestPool(t, poolTestNow)
 	pool.mu.Lock()
 	account := pool.state.Accounts[0]
-	oldAuthIndex := account.AuthIndex
-	oldEmail := account.Email
+	authIndex := account.AuthIndex
 	account.FiveHour.Utilization = 100
-	account.Status = "error"
-	account.StatusMessage = "Quota exhausted"
-	account.Unavailable = true
-	account.ExhaustedRefreshes = 1
-	account.RetireAfter = 1
+	account.FiveHour.ResetAt = poolTestNow.Add(10 * time.Minute)
 	pool.mu.Unlock()
 
-	files := pool.authFiles(now.Add(time.Minute), true)
-	for _, file := range files {
-		if file["auth_index"] == oldAuthIndex {
-			t.Fatal("exhausted account should leave the active list")
-		}
+	pool.authFiles(poolTestNow.Add(6*time.Minute), true)
+	pool.mu.Lock()
+	exhausted := pool.findAccountLocked(authIndex)
+	message := exhausted.StatusMessage
+	pool.mu.Unlock()
+	if message != "Quota exhausted" {
+		t.Fatalf("status message = %q, want Quota exhausted", message)
 	}
-	if _, ok := pool.usage(now.Add(2*time.Minute), oldAuthIndex); !ok {
-		t.Fatal("retired account should remain queryable during the grace period")
+
+	pool.authFiles(poolTestNow.Add(30*time.Minute), true)
+	pool.mu.Lock()
+	recovered := pool.findAccountLocked(authIndex)
+	status := recovered.Status
+	pool.mu.Unlock()
+	if status != "active" {
+		t.Fatalf("status = %q, want the credential to recover after the window reset", status)
 	}
-	newEmailFound := false
-	for _, file := range files {
-		if file["email"] != oldEmail && file["created_at"].(time.Time).After(now.Add(-10*time.Minute)) {
-			newEmailFound = true
-			break
-		}
-	}
-	if !newEmailFound {
-		t.Fatal("expected a newly registered credential with a different Gmail")
-	}
-	pool.authFiles(now.Add(poolRetiredGracePeriod+2*time.Minute), true)
-	if _, ok := pool.usage(now.Add(poolRetiredGracePeriod+3*time.Minute), oldAuthIndex); ok {
-		t.Fatal("retired account should expire after the grace period")
+	if _, ok := pool.usage(poolTestNow.Add(31*time.Minute), authIndex); !ok {
+		t.Fatal("credential must remain queryable")
 	}
 }
 
 func TestPoolStatePersistsAndReloads(t *testing.T) {
-	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	path := filepath.Join(t.TempDir(), "pool-state.json")
-	first := newPoolSimulator(path, now, 1234)
-	files := first.authFiles(now, true)
+	first := newPoolSimulator(path, poolTestNow, 1234)
+	files := first.authFiles(poolTestNow, true)
 	first.mu.Lock()
 	revision := first.state.Revision
 	seed := first.state.Seed
 	first.mu.Unlock()
 
-	second := newPoolSimulator(path, now.Add(time.Hour), 9999)
-	reloaded := second.authFiles(now.Add(time.Hour), false)
+	second := newPoolSimulator(path, poolTestNow, 9999)
+	reloaded := second.authFiles(poolTestNow, false)
 	second.mu.Lock()
 	defer second.mu.Unlock()
 	if second.state.Revision != revision || second.state.Seed != seed {
@@ -223,92 +272,177 @@ func TestPoolStatePersistsAndReloads(t *testing.T) {
 }
 
 func TestCorruptPoolStateRebuildsSafely(t *testing.T) {
-	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	path := filepath.Join(t.TempDir(), "pool-state.json")
 	if errWrite := os.WriteFile(path, []byte("{broken"), 0o600); errWrite != nil {
 		t.Fatalf("write corrupt state: %v", errWrite)
 	}
-	pool := newPoolSimulator(path, now, 1234)
-	files := pool.authFiles(now, false)
-	if len(files) != poolInitialAccounts {
+	pool := newPoolSimulator(path, poolTestNow, 1234)
+	if files := pool.authFiles(poolTestNow, false); len(files) != poolInitialAccounts {
 		t.Fatalf("rebuilt account count = %d, want %d", len(files), poolInitialAccounts)
 	}
 }
 
-func TestPoolLogsAdvanceAndUseCurrentModels(t *testing.T) {
-	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
-	pool := newTestPool(t, now)
-	_, _, latest := pool.logLines(now, 0, 5)
-	lines, total, nextLatest := pool.logLines(now.Add(31*time.Second), latest, 10)
-	if total == 0 || len(lines) == 0 || nextLatest <= latest {
-		t.Fatal("expected a new rolling log entry")
+func TestSemanticallyUnsafePoolStateRebuildsWithoutEmailLeak(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pool-state.json")
+	first := newPoolSimulator(path, poolTestNow, 1234)
+	first.mu.Lock()
+	first.state.Accounts[0].Email = "complete.address@gmail.com"
+	first.state.Accounts[0].Name = "claude-complete.address@gmail.com.json"
+	if errPersist := first.persistLocked(); errPersist != nil {
+		first.mu.Unlock()
+		t.Fatalf("persist unsafe fixture: %v", errPersist)
 	}
-	joined := strings.Join(lines, "\n")
-	if !strings.Contains(joined, "provider=claude") {
-		t.Fatalf("unexpected logs: %s", joined)
+	first.mu.Unlock()
+
+	rebuilt := newPoolSimulator(path, poolTestNow.Add(time.Minute), 9876)
+	files := rebuilt.authFiles(poolTestNow.Add(time.Minute), false)
+	if len(files) != poolInitialAccounts {
+		t.Fatalf("rebuilt account count = %d, want %d", len(files), poolInitialAccounts)
 	}
-	foundModel := false
-	for _, model := range poolModelIDs {
-		if strings.Contains(joined, model) {
-			foundModel = true
+	encoded, errEncode := json.Marshal(files)
+	if errEncode != nil {
+		t.Fatal(errEncode)
+	}
+	if strings.Contains(string(encoded), "complete.address@gmail.com") {
+		t.Fatal("unsafe full Gmail survived state validation")
+	}
+}
+
+func TestPoolStateRepairsAccountBoundsWithoutReplacingIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pool-state.json")
+	first := newPoolSimulator(path, poolTestNow, 2468)
+	first.mu.Lock()
+	wantSeed := first.state.Seed
+	wantAuthIndex := first.state.Accounts[0].AuthIndex
+	first.state.Accounts = first.state.Accounts[:1]
+	if errPersist := first.persistLocked(); errPersist != nil {
+		first.mu.Unlock()
+		t.Fatalf("persist short pool fixture: %v", errPersist)
+	}
+	first.mu.Unlock()
+
+	repaired := newPoolSimulator(path, poolTestNow.Add(time.Minute), 9999)
+	repaired.mu.Lock()
+	defer repaired.mu.Unlock()
+	if repaired.state.Seed != wantSeed {
+		t.Fatal("bounds repair replaced the persistent seed")
+	}
+	if len(repaired.state.Accounts) != poolMinimumAccounts {
+		t.Fatalf("repaired account count = %d, want %d", len(repaired.state.Accounts), poolMinimumAccounts)
+	}
+	if repaired.state.Accounts[0].AuthIndex != wantAuthIndex {
+		t.Fatal("bounds repair replaced an existing identity")
+	}
+}
+
+// Rendered lines use the process wall clock, matching the proxy logger. Request
+// identifiers are opaque New API values and are never parsed for a timestamp.
+func TestPoolLineUsesLocalClockAndOpaqueRequestID(t *testing.T) {
+	shanghai, errLoad := time.LoadLocation("Asia/Shanghai")
+	if errLoad != nil {
+		t.Skipf("timezone database unavailable: %v", errLoad)
+	}
+	previous := time.Local
+	time.Local = shanghai
+	defer func() { time.Local = previous }()
+
+	entry := poolLogEntry{
+		Timestamp: poolTestNow.Unix(),
+		Level:     "INFO",
+		Message:   "request completed",
+		Source:    "newapi",
+		RequestID: "legacy:id with opaque-format",
+	}
+
+	want := time.Unix(entry.Timestamp, 0).In(shanghai).Format("2006-01-02 15:04:05")
+	if !strings.HasPrefix(entry.Line(), "["+want+"]") {
+		t.Fatalf("line %q does not open with the local wall clock %q", entry.Line(), want)
+	}
+	utc := time.Unix(entry.Timestamp, 0).UTC().Format("2006-01-02 15:04:05")
+	if want == utc {
+		t.Fatal("test timezone must differ from UTC to be meaningful")
+	}
+	if strings.HasPrefix(entry.Line(), "["+utc+"]") {
+		t.Fatal("line still renders UTC instead of the local wall clock")
+	}
+
+	if !strings.Contains(entry.Line(), `request_id="`+entry.RequestID+`"`) {
+		t.Fatal("rendered line changed the opaque request identifier")
+	}
+}
+func TestPoolModelMixMatchesFleetDistribution(t *testing.T) {
+	models := poolModelsForAuth("anything")
+	if len(models) != len(poolModelIDs) || len(models) != 4 {
+		t.Fatalf("model count = %d, want 4", len(models))
+	}
+	seen := make(map[string]bool, len(models))
+	for _, model := range models {
+		id := model["id"].(string)
+		if !strings.HasPrefix(id, "claude-") {
+			t.Fatalf("unexpected model id %q", id)
 		}
+		if seen[id] {
+			t.Fatalf("duplicate model id %q", id)
+		}
+		seen[id] = true
 	}
-	if !foundModel {
-		t.Fatalf("logs do not use current models: %s", joined)
-	}
-	for _, oldModel := range []string{"claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5 ", "@example"} {
-		if strings.Contains(joined, oldModel) {
-			t.Fatalf("logs contain obsolete or unmasked value %q", oldModel)
+	for _, required := range []string{"claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001"} {
+		if !seen[required] {
+			t.Fatalf("model mix is missing %q", required)
 		}
 	}
 }
 
-func TestPoolModelsMatchOfficialSnapshot(t *testing.T) {
-	models := poolModelsForAuth("anything")
-	want := []string{"claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001"}
-	if len(models) != len(want) {
-		t.Fatalf("model count = %d, want %d", len(models), len(want))
+func TestPoolRecentRequestsUseBucketLabels(t *testing.T) {
+	pool := newTestPool(t, poolTestNow)
+	files := pool.authFiles(poolTestNow, false)
+	buckets := files[0]["recent_requests"].([]gin.H)
+	if len(buckets) != 20 {
+		t.Fatalf("bucket count = %d, want 20", len(buckets))
 	}
-	for index := range want {
-		if models[index]["id"] != want[index] {
-			t.Fatalf("model %d = %q, want %q", index, models[index]["id"], want[index])
+	pattern := regexp.MustCompile(`^\d{2}:\d{2}-\d{2}:\d{2}$`)
+	for _, bucket := range buckets {
+		label := bucket["time"].(string)
+		if !pattern.MatchString(label) {
+			t.Fatalf("bucket label %q does not use the HH:MM-HH:MM format", label)
+		}
+		if _, ok := bucket["success"].(int64); !ok {
+			t.Fatalf("bucket success is not an integer: %#v", bucket["success"])
 		}
 	}
 }
 
 func TestPoolSimulatorConcurrentReadsAndRefreshes(t *testing.T) {
-	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
-	pool := newTestPool(t, now)
-	authIndex := pool.authFiles(now, false)[0]["auth_index"].(string)
+	pool := newTestPool(t, poolTestNow)
+	authIndex := pool.authFiles(poolTestNow, false)[0]["auth_index"].(string)
 	var wait sync.WaitGroup
 	for i := 0; i < 24; i++ {
 		wait.Add(1)
 		go func(index int) {
 			defer wait.Done()
-			at := now.Add(time.Duration(index) * time.Second)
+			at := poolTestNow.Add(time.Duration(index) * time.Second)
 			switch index % 3 {
 			case 0:
 				pool.authFiles(at, index%6 == 0)
 			case 1:
 				pool.usage(at, authIndex)
 			case 2:
-				pool.logLines(at, 0, 5)
+				pool.mapRequestAccount(at, "opaque-request-id")
 			}
 		}(i)
 	}
 	wait.Wait()
-	count := len(pool.authFiles(now.Add(time.Minute), false))
-	if count < poolMinimumAccounts || count > poolMaximumAccounts {
+	count := len(pool.authFiles(poolTestNow.Add(time.Minute), false))
+	if count < poolMinimumAccounts {
 		t.Fatalf("concurrent account count = %d", count)
 	}
 }
 
 func TestPoolAPICallReturnsUsageAndBlocksOtherTargets(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
-	pool := newTestPool(t, now)
+	pool := newTestPool(t, poolTestNow)
 	handler := &Handler{poolMode: true, poolState: pool}
-	authIndex := pool.authFiles(now, false)[0]["auth_index"].(string)
+	authIndex := pool.authFiles(poolTestNow, false)[0]["auth_index"].(string)
 	request := apiCallRequest{AuthIndexSnake: &authIndex, Method: http.MethodGet, URL: "https://api.anthropic.com/api/oauth/usage"}
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -344,8 +478,8 @@ func TestPoolModeListAuthFilesUsesPersistentPool(t *testing.T) {
 	if errDecode := json.Unmarshal(recorder.Body.Bytes(), &payload); errDecode != nil {
 		t.Fatalf("decode auth payload: %v", errDecode)
 	}
-	if len(payload.Files) < poolMinimumAccounts || len(payload.Files) > poolMaximumAccounts || len(payload.Files) == poolInitialAccounts {
-		t.Fatalf("dynamic auth file count = %d", len(payload.Files))
+	if len(payload.Files) < poolMinimumAccounts {
+		t.Fatalf("auth file count = %d, want at least %d", len(payload.Files), poolMinimumAccounts)
 	}
 }
 

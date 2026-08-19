@@ -68,6 +68,7 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
 	}
 	if poolMode {
 		h.poolState = newPoolSimulator(poolStatePath(), time.Now(), 0)
+		poolLogServiceFor(h.poolState)
 	}
 	h.startAttemptCleanup()
 	return h

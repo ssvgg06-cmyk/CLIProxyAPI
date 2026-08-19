@@ -1,0 +1,20 @@
+# Insert these handles inside the existing nlapi.cc site, immediately before
+# its catch-all `handle { reverse_proxy new-api:3000 }` block.
+
+@cpaLogBridgeAllowed {
+  path /internal/cpa-pool/logs /internal/cpa-pool/logs/*
+  remote_ip 43.156.101.97/32
+}
+
+handle @cpaLogBridgeAllowed {
+  uri strip_prefix /internal/cpa-pool/logs
+  reverse_proxy cpa-log-bridge:8080
+}
+
+# Do not let denied bridge requests fall through to the New API application.
+@cpaLogBridgeDenied {
+  path /internal/cpa-pool/logs /internal/cpa-pool/logs/*
+}
+handle @cpaLogBridgeDenied {
+  respond 404
+}

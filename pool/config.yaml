@@ -8,5 +8,3 @@ remote-management:
   secret-key: ""
   disable-control-panel: false
   disable-auto-update-panel: false
-api-keys:
-  - cpa-pool-local-key

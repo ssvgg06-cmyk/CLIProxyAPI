@@ -21,6 +21,20 @@ logs/*
 conv/*
 config.yaml
 
+# Deployment secrets must never enter a Docker build context or layer cache.
+.env
+.env.*
+**/.env
+**/.env.*
+pool/secrets/
+**/secrets/
+**/secrets/**
+
+# Persistent pool state can contain real Request IDs and must stay in volumes.
+pool/state/
+**/pool-state.json
+**/newapi-log-cache.json.gz
+
 # Development/editor
 bin/*
 .vscode/*
