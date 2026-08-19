@@ -50,8 +50,8 @@ persists only the safe projection. Initial startup loads at most the most recent
 
 Bridge failures use exponential backoff up to 60 seconds. Cached list and exact
 matches remain available with `source.stale=true`; an uncached exact lookup
-returns HTTP 503. CPA never fabricates a replacement request ID or substitutes
-a locally generated request when the bridge is unavailable.
+returns HTTP 503. CPA never substitutes a locally generated request record when
+the bridge is unavailable.
 
 Every New API request is associated with an account that existed at the event
 time using a versioned SHA-256 mapping over the persistent pool seed and the
@@ -79,6 +79,23 @@ Structured request records include the exact primary/upstream IDs, actual
 timestamp, actual `claude-*` model, safe status and latency, plus the associated
 masked account fields. Local credential lifecycle records carry
 `source="cpa"` and no request ID; bridge records carry `source="newapi"`.
+
+CPA adds a presentation projection without changing either source identifier:
+
+- `cpa_request_id` is the exact New API upstream ID, falling back to the exact
+  New API primary ID when no upstream ID was recorded.
+- `cpa_upstream_request_id` is a deterministic `req_01`-style identifier
+  derived from the exact New API primary ID. It is stable across refreshes and
+  deployments, but is not an Anthropic or New API lookup key.
+- The existing `request_id` and `upstream_request_id` fields retain the exact
+  New API values for provenance and compatibility.
+
+The console displays the CPA projection while exact lookup, cache identity,
+account mapping and log downloads continue to use the unmodified New API IDs.
+The structured JSON fields remain backward compatible. In the human-readable
+`line` value and downloaded text, `request_id`/`upstream_request_id` name the
+CPA chain, while `newapi_request_id`/`newapi_upstream_request_id` retain the
+exact source values.
 
 The account popup continues to advertise the fixed four-model snapshot used by
 the pool. New API logs may display any real model whose name begins `claude-`;

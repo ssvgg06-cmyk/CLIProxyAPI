@@ -335,8 +335,8 @@ func TestPoolStateRepairsAccountBoundsWithoutReplacingIdentity(t *testing.T) {
 	}
 }
 
-// Rendered lines use the process wall clock, matching the proxy logger. Request
-// identifiers are opaque New API values and are never parsed for a timestamp.
+// Rendered lines use the process wall clock, matching the proxy logger. The
+// canonical request identifier stays opaque and is never parsed for a timestamp.
 func TestPoolLineUsesLocalClockAndOpaqueRequestID(t *testing.T) {
 	shanghai, errLoad := time.LoadLocation("Asia/Shanghai")
 	if errLoad != nil {

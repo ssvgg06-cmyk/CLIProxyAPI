@@ -54,3 +54,40 @@ func TestPoolConsoleUsesCPAManagementVisualLanguage(t *testing.T) {
 		}
 	}
 }
+
+func TestPoolConsoleUsesCPARequestChainFieldsWithoutBreakingCanonicalDownload(t *testing.T) {
+	for _, required := range []string{
+		`placeholder="粘贴 New API 日志 ID 或 CPA 请求 ID"`,
+		`tr.appendChild(cell(entry.cpa_request_id, "rid"))`,
+		`["请求 ID", entry.cpa_request_id]`,
+		`["上游请求 ID", entry.cpa_upstream_request_id]`,
+		`["New API 日志 ID", entry.request_id]`,
+		`navigator.clipboard.writeText(entry.cpa_request_id)`,
+		`downloadLog(entry.request_id)`,
+	} {
+		if !strings.Contains(poolConsoleHTML, required) {
+			t.Fatalf("pool console is missing CPA request-chain contract %q", required)
+		}
+	}
+
+	requestLabel := strings.Index(poolConsoleHTML, `["请求 ID", entry.cpa_request_id]`)
+	upstreamLabel := strings.Index(poolConsoleHTML, `["上游请求 ID", entry.cpa_upstream_request_id]`)
+	newAPILabel := strings.Index(poolConsoleHTML, `["New API 日志 ID", entry.request_id]`)
+	if requestLabel < 0 || upstreamLabel <= requestLabel || newAPILabel <= upstreamLabel {
+		t.Fatal("pool console request-chain fields are not shown in the required order")
+	}
+
+	for _, forbidden := range []string{
+		`tr.appendChild(cell(entry.request_id, "rid"))`,
+		`navigator.clipboard.writeText(entry.request_id)`,
+		`downloadLog(entry.cpa_request_id)`,
+		`placeholder="粘贴 New API Request ID 或 Upstream Request ID"`,
+		`req_01`,
+		`展示 ID`,
+		`演示 ID`,
+	} {
+		if strings.Contains(poolConsoleHTML, forbidden) {
+			t.Fatalf("pool console contains forbidden request-chain behavior %q", forbidden)
+		}
+	}
+}

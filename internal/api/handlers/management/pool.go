@@ -139,6 +139,8 @@ func poolLogEntriesPayload(entries []poolLogEntry) []gin.H {
 		if entry.RequestID != "" {
 			item["request_id"] = entry.RequestID
 			item["upstream_request_id"] = entry.UpstreamID
+			item["cpa_request_id"] = entry.cpaRequestID()
+			item["cpa_upstream_request_id"] = entry.cpaUpstreamRequestID()
 			item["auth_index"] = entry.AuthIndex
 			item["account"] = entry.Account
 			item["email"] = entry.Email
@@ -254,6 +256,8 @@ file: %s
 timestamp: %s
 request_id: %s
 upstream_request_id: %s
+newapi_request_id: %s
+newapi_upstream_request_id: %s
 source: %s
 mapping_status: %s
 log_type: %d
@@ -270,6 +274,8 @@ result: %s
 `,
 		name,
 		time.Unix(entry.Timestamp, 0).Format(time.RFC3339),
+		entry.cpaRequestID(),
+		entry.cpaUpstreamRequestID(),
 		entry.RequestID,
 		entry.UpstreamID,
 		entry.Source,

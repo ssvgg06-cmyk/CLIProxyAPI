@@ -258,8 +258,8 @@ func (e poolLogEntry) Line() string {
 		return fmt.Sprintf("[%s] [%s] %s source=%s", timestamp, e.Level, e.Message, source)
 	}
 	line := fmt.Sprintf(
-		"[%s] [%s] %s provider=claude account=%s email=%s auth_index=%s model=%s status=%d latency_ms=%d request_id=%q upstream_request_id=%q source=%s",
-		timestamp, e.Level, e.Message, e.Account, e.Email, e.AuthIndex, e.Model, e.Status, e.LatencyMS, e.RequestID, e.UpstreamID, source,
+		"[%s] [%s] %s provider=claude account=%s email=%s auth_index=%s model=%s status=%d latency_ms=%d request_id=%q upstream_request_id=%q newapi_request_id=%q newapi_upstream_request_id=%q source=%s",
+		timestamp, e.Level, e.Message, e.Account, e.Email, e.AuthIndex, e.Model, e.Status, e.LatencyMS, e.cpaRequestID(), e.cpaUpstreamRequestID(), e.RequestID, e.UpstreamID, source,
 	)
 	if e.MappingStatus != "" {
 		line += " mapping_status=" + e.MappingStatus
