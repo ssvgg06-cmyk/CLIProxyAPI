@@ -6,10 +6,10 @@ services:
       context: ..
       dockerfile: Dockerfile
       args:
-        VERSION: v7.1.5
+        VERSION: v7.1.6
         COMMIT: claude-pool
         BUILD_DATE: local
-    image: cpa-pool:v7.1.5
+    image: cpa-pool:v7.1.6
     container_name: cpa-pool
     command: ["./CLIProxyAPI", "--config", "/pool/config.yaml", "--local-model"]
     environment:

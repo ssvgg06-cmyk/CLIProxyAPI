@@ -27,3 +27,30 @@ func TestPoolConsoleDoesNotAdvancePoolOrUseUnsafeDOMSinks(t *testing.T) {
 		t.Fatal("pool console does not clear the password field after unlock and lock")
 	}
 }
+
+func TestPoolConsoleUsesCPAManagementVisualLanguage(t *testing.T) {
+	for _, required := range []string{
+		`--cpa-surface-subtle: #f6f6f6`,
+		`--cpa-border: #e5e5e5`,
+		`--sidebar-width: 216px`,
+		`class="sidebar"`,
+		`aria-current="page"`,
+		`日志链路分析`,
+		`CLI Proxy API 管理控制台`,
+		`关联账号采用稳定映射`,
+		`不代表真实上游处理凭据`,
+	} {
+		if !strings.Contains(poolConsoleHTML, required) {
+			t.Fatalf("pool console is missing CPA visual contract %q", required)
+		}
+	}
+	for _, obsolete := range []string{
+		`--bg: #0d1117`,
+		`--accent: #4493f8`,
+		`Credential Pool Log Console`,
+	} {
+		if strings.Contains(poolConsoleHTML, obsolete) {
+			t.Fatalf("pool console still contains obsolete terminal styling %q", obsolete)
+		}
+	}
+}

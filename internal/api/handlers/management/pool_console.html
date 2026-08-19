@@ -3,105 +3,291 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Credential Pool Log Console</title>
+<title>日志链路分析 · CPAMC</title>
 <style>
   :root {
-    --bg: #0d1117; --panel: #161b22; --panel-2: #1c2129; --line: #30363d;
-    --text: #e6edf3; --muted: #9da7b3; --accent: #4493f8; --accent-dim: #1f6feb;
-    --ok: #3fb950; --warn: #d29922; --err: #f85149; --radius: 6px;
+    --cpa-canvas: #ffffff;
+    --cpa-sidebar: #ffffff;
+    --cpa-surface: #ffffff;
+    --cpa-surface-subtle: #f6f6f6;
+    --cpa-surface-hover: #f3f3f2;
+    --cpa-border: #e5e5e5;
+    --cpa-border-strong: #cccccc;
+    --cpa-text: #2d2a26;
+    --cpa-text-secondary: #6d6760;
+    --cpa-text-muted: #a29c95;
+    --cpa-primary: #2d2a26;
+    --cpa-primary-hover: #45413c;
+    --cpa-claude: #d97745;
+    --cpa-link: #386a7b;
+    --cpa-success: #065f46;
+    --cpa-success-bg: #d1fae5;
+    --cpa-success-border: #6ee7b7;
+    --cpa-warning: #92400e;
+    --cpa-warning-bg: #fef3c7;
+    --cpa-warning-border: #fcd34d;
+    --cpa-danger: #8a3a30;
+    --cpa-danger-bg: #c6574624;
+    --cpa-danger-border: #c6574659;
+    --cpa-focus: #776f66;
+    --cpa-radius-control: 8px;
+    --cpa-radius-panel: 12px;
+    --cpa-shadow-menu: 0 16px 42px rgba(45, 42, 38, .14);
+    --cpa-shadow-subtle: 0 1px 2px rgba(0, 0, 0, .08);
+    --sidebar-width: 216px;
+    --text: var(--cpa-text);
+    --muted: var(--cpa-text-secondary);
+    --ok: var(--cpa-success);
+    --warn: var(--cpa-warning);
+    --err: var(--cpa-danger);
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  html { min-width: 320px; background: var(--cpa-canvas); }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    margin: 0;
+    min-height: 100vh;
+    background: var(--cpa-canvas);
+    color: var(--cpa-text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  header {
-    display: flex; align-items: center; gap: 12px; padding: 12px 20px;
-    border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 20;
+  button, input, select { font: inherit; }
+  button, a, input, select { -webkit-tap-highlight-color: transparent; }
+  .hide { display: none !important; }
+
+  .gate-page {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 32px 20px;
+    position: relative;
+    overflow: hidden;
   }
-  header h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: .2px; }
-  header .node { font: 12px var(--mono); color: var(--muted); }
-  header .spacer { flex: 1; }
-  .toolbar { padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
-  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
-  .row + .row { margin-top: 10px; }
-  .field { display: flex; flex-direction: column; gap: 4px; }
-  .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .gate-page::before, .top-gradient-blur {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: 156px;
+    background: linear-gradient(180deg, #e2e2e1 0%, rgba(255,255,255,.54) 38%, rgba(255,255,255,.2) 68%, transparent 100%);
+    pointer-events: none;
+  }
+  .gate {
+    width: min(100%, 420px);
+    margin: 0;
+    padding: 28px;
+    background: var(--cpa-surface);
+    border: 1px solid var(--cpa-border);
+    border-radius: var(--cpa-radius-panel);
+    box-shadow: var(--cpa-shadow-subtle);
+    position: relative;
+    z-index: 1;
+  }
+  .gate-brand { display: flex; align-items: center; gap: 11px; margin-bottom: 28px; }
+  .brand-mark {
+    width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center;
+    border-radius: 7px; color: #315a51; font: 700 18px/1 Georgia, serif;
+    background: linear-gradient(135deg, #ead66b 0%, #88b19d 58%, #5a958b 100%);
+    box-shadow: inset 0 0 0 1px rgba(45,42,38,.12);
+  }
+  .brand-copy { display: flex; flex-direction: column; line-height: 1.2; }
+  .brand-copy strong { font-size: 16px; letter-spacing: .1px; }
+  .brand-copy span { margin-top: 3px; color: var(--cpa-text-secondary); font-size: 11px; }
+  .gate h1 { margin: 0 0 8px; font-size: 24px; line-height: 1.3; letter-spacing: -.35px; }
+  .gate > p { margin: 0 0 22px; color: var(--cpa-text-secondary); font-size: 14px; }
+  .gate .field { margin-bottom: 14px; }
+  .gate button { width: 100%; }
+
+  .app-shell { min-height: 100vh; background: var(--cpa-canvas); }
+  .sidebar {
+    position: fixed; inset: 0 auto 0 0; z-index: 20; width: var(--sidebar-width);
+    display: flex; flex-direction: column; gap: 8px; overflow-y: auto;
+    padding: 14px 10px 22px; background: var(--cpa-sidebar); border-right: 1px solid var(--cpa-border);
+  }
+  .sidebar-brand {
+    display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 6px 12px;
+    color: inherit; text-decoration: none; border-bottom: 1px solid var(--cpa-border);
+  }
+  .nav-group { margin-top: 2px; }
+  .nav-label { padding: 7px 10px 5px; color: var(--cpa-text-muted); font-size: 11px; line-height: 1; }
+  .nav-link {
+    min-height: 34px; display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+    color: var(--cpa-text-secondary); border-radius: 9px; text-decoration: none;
+    font-size: 13px; font-weight: 500; transition: background .2s, color .2s;
+  }
+  .nav-link:hover { color: var(--cpa-text); background: var(--cpa-surface-subtle); }
+  .nav-link.active { color: var(--cpa-text); background: rgba(45,42,38,.1); font-weight: 600; }
+  .nav-icon {
+    width: 16px; height: 16px; flex: 0 0 16px; display: inline-flex; align-items: center; justify-content: center;
+    color: currentColor; font: 600 15px/1 var(--mono);
+  }
+  .nav-link.active .nav-icon { color: var(--cpa-claude); }
+  .nav-badge {
+    margin-left: auto; padding: 1px 6px; border-radius: 999px; background: rgba(45,42,38,.09);
+    color: var(--cpa-text-secondary); font: 600 10px/1.5 var(--mono);
+  }
+
+  .top-gradient-blur { left: var(--sidebar-width); z-index: 9; height: 141px; }
+  .top-actions {
+    position: fixed; top: 24px; right: 24px; z-index: 30; height: 52px;
+    display: flex; align-items: center; gap: 4px; padding: 6px;
+    border-radius: 16px; background: rgba(255,255,255,.78); box-shadow: var(--cpa-shadow-menu);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  }
+  .top-actions a, .top-actions button {
+    min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 8px 11px; border: 0; border-radius: 10px; background: transparent;
+    color: var(--cpa-text); text-decoration: none; font-weight: 600; cursor: pointer;
+  }
+  .top-actions a:hover, .top-actions button:hover { background: rgba(45,42,38,.08); }
+  .action-icon { font-size: 16px; line-height: 1; }
+
+  .workspace { min-width: 0; margin-left: var(--sidebar-width); position: relative; z-index: 10; }
+  .workspace-content { padding: 70px 48px 40px; }
+  .page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 24px; padding-right: 210px; }
+  .page-heading h1 { margin: 0; font-size: 28px; line-height: 1.5; letter-spacing: -.5px; }
+  .page-heading p { margin: 3px 0 0; color: var(--cpa-text-secondary); font-size: 14px; }
+  .page-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 10px; color: var(--cpa-text-secondary); font-size: 12px; }
+  .page-meta::before { content: "▍"; color: #10b981; font-family: var(--mono); }
+  .page-meta .node { font-family: var(--mono); }
+  .provenance-note {
+    display: flex; align-items: flex-start; gap: 9px; margin-bottom: 18px; padding: 11px 13px;
+    border: 1px solid var(--cpa-border); border-radius: 10px; background: var(--cpa-surface-subtle);
+    color: var(--cpa-text-secondary); font-size: 12px;
+  }
+  .provenance-note strong { color: var(--cpa-text); }
+  .note-icon {
+    width: 18px; height: 18px; flex: 0 0 18px; display: grid; place-items: center;
+    border-radius: 50%; background: #eeeae6; color: var(--cpa-text-secondary); font: 700 11px/1 var(--mono);
+  }
+
+  .toolbar {
+    padding: 20px; border: 1px solid var(--cpa-border); border-radius: var(--cpa-radius-panel);
+    background: var(--cpa-surface); box-shadow: var(--cpa-shadow-subtle);
+  }
+  .toolbar-title { margin: 0 0 16px; font-size: 15px; font-weight: 700; }
+  .row { display: grid; gap: 14px; align-items: end; }
+  .row + .row { margin-top: 16px; }
+  .range-row { grid-template-columns: minmax(210px, 1fr) minmax(210px, 1fr) minmax(120px, .45fr) 100px auto; }
+  .lookup-row { grid-template-columns: minmax(320px, 1.35fr) minmax(250px, 1fr); }
+  .field { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+  .field label { color: var(--cpa-text-secondary); font-size: 12px; font-weight: 600; }
+  .field-help { color: var(--cpa-text-secondary); font-weight: 400; }
   input, select, button {
-    font: inherit; color: var(--text); background: var(--bg);
-    border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 9px; outline: none;
+    min-height: 42px; color: var(--cpa-text); background: var(--cpa-surface);
+    border: 1px solid var(--cpa-border); border-radius: var(--cpa-radius-control); padding: 9px 11px; outline: none;
   }
   input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible {
-    border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px;
+    outline: 2px solid var(--cpa-focus); outline-offset: 2px;
   }
-  input[type=datetime-local] { font: 13px var(--mono); }
+  input:hover, select:hover { border-color: var(--cpa-border-strong); }
+  input::placeholder { color: var(--cpa-text-secondary); opacity: 1; }
+  input[type=datetime-local] { font-family: var(--mono); font-size: 13px; }
   .mono, input.mono { font-family: var(--mono); }
-  button { cursor: pointer; background: var(--panel-2); transition: background .12s, border-color .12s; }
-  button:hover { background: #262c36; border-color: #484f58; }
-  button.primary { background: var(--accent-dim); border-color: var(--accent-dim); font-weight: 500; }
-  button.primary:hover { background: var(--accent); border-color: var(--accent); }
-  button.chip { padding: 4px 10px; font-size: 12px; border-radius: 999px; }
-  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
-  .status { padding: 8px 20px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
-  .status .warnpill { color: var(--warn); border: 1px solid var(--warn); border-radius: 999px; padding: 1px 9px; font-size: 11px; }
-  .sourcepill { border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; font-size: 11px; }
-  .sourcepill.ok { color: var(--ok); border-color: #2f6f3e; }
-  .sourcepill.stale { color: var(--warn); border-color: #6b5520; }
-  .sourcepill.down { color: var(--err); border-color: #6e2a31; }
-  .wrap { display: grid; grid-template-columns: 1fr 0; }
-  .wrap.detail-open { grid-template-columns: 1fr 380px; }
-  main { overflow-x: auto; min-width: 0; }
+  button { cursor: pointer; font-weight: 600; transition: background .16s, border-color .16s, color .16s, transform .16s; }
+  button:hover { background: var(--cpa-surface-hover); border-color: var(--cpa-border-strong); }
+  button:active { transform: translateY(1px); }
+  button:disabled { cursor: wait; opacity: .65; transform: none; }
+  button.primary { min-width: 88px; color: #fff; background: var(--cpa-primary); border-color: var(--cpa-primary); }
+  button.primary:hover { background: var(--cpa-primary-hover); border-color: var(--cpa-primary-hover); }
+  button.secondary { background: var(--cpa-surface-subtle); }
+  button.chip { min-height: 36px; padding: 6px 11px; font-size: 12px; border-radius: 9px; background: var(--cpa-surface-subtle); }
+  .chips { display: flex; gap: 7px; flex-wrap: wrap; }
+  .preset-row { grid-template-columns: 1fr; }
+  .results-panel { margin-top: 20px; border: 1px solid var(--cpa-border); border-radius: var(--cpa-radius-panel); background: var(--cpa-surface); }
+  .status {
+    min-height: 52px; padding: 10px 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+    color: var(--cpa-text-secondary); border-bottom: 1px solid var(--cpa-border); background: var(--cpa-surface);
+    font-size: 12px;
+  }
+  .status .warnpill, .sourcepill, .badge, .lvl {
+    display: inline-flex; align-items: center; border: 1px solid; border-radius: 999px; font-size: 11px; line-height: 1.4;
+  }
+  .status .warnpill { padding: 3px 9px; color: var(--cpa-warning); border-color: var(--cpa-warning-border); background: var(--cpa-warning-bg); }
+  .sourcepill { gap: 6px; padding: 3px 9px; }
+  .sourcepill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .sourcepill.ok { color: var(--cpa-success); border-color: var(--cpa-success-border); background: var(--cpa-success-bg); }
+  .sourcepill.stale { color: var(--cpa-warning); border-color: var(--cpa-warning-border); background: var(--cpa-warning-bg); }
+  .sourcepill.down { color: var(--cpa-danger); border-color: var(--cpa-danger-border); background: var(--cpa-danger-bg); }
+  .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 0; }
+  .wrap.detail-open { grid-template-columns: minmax(0, 1fr) 390px; }
+  .table-region { min-width: 0; overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   thead th {
-    position: sticky; top: 0; background: var(--panel-2); text-align: left; font-weight: 600;
-    font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
-    padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; z-index: 5;
+    position: sticky; top: 0; z-index: 5; padding: 11px 13px;
+    background: var(--cpa-surface-subtle); color: var(--cpa-text-secondary); border-bottom: 1px solid var(--cpa-border);
+    text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .25px; white-space: nowrap;
   }
-  tbody td { padding: 6px 10px; border-bottom: 1px solid #21262d; white-space: nowrap; }
-  tbody tr { cursor: pointer; }
-  tbody tr:hover { background: #1a1f27; }
-  tbody tr.sel { background: #1f2937; outline: 1px solid var(--accent); outline-offset: -1px; }
+  tbody td { padding: 10px 13px; border-bottom: 1px solid var(--cpa-border); white-space: nowrap; }
+  tbody tr { cursor: pointer; transition: background .16s; }
+  tbody tr:hover { background: var(--cpa-surface-hover); }
+  tbody tr.sel { background: #ecebe9; box-shadow: inset 3px 0 var(--cpa-claude); }
+  tbody tr:last-child td { border-bottom: 0; }
   td.t, td.rid, td.acct { font-family: var(--mono); font-size: 12px; }
-  td.acct { color: var(--accent); }
+  td.acct { color: var(--cpa-link); font-weight: 600; }
+  td.rid { max-width: 330px; white-space: normal; word-break: break-all; color: var(--cpa-text-secondary); }
   td.num { text-align: right; font-family: var(--mono); font-size: 12px; }
-  .lvl { font: 11px var(--mono); padding: 1px 7px; border-radius: 999px; border: 1px solid; }
-  .lvl.INFO { color: var(--ok); border-color: #21402a; background: #10241733; }
-  .lvl.WARN { color: var(--warn); border-color: #45391c; background: #2b210933; }
-  .lvl.ERROR { color: var(--err); border-color: #4a2225; background: #2d111333; }
-  .st200 { color: var(--ok); } .st429 { color: var(--warn); } .st5 { color: var(--err); }
-  aside { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; min-width: 0; }
-  aside .inner { padding: 16px; }
-  aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 0 0 12px; }
-  aside h2 + .kv { margin-top: -4px; }
-  .kv { display: grid; grid-template-columns: 108px 1fr; gap: 6px 10px; font-size: 12px; margin-bottom: 18px; }
-  .kv dt { color: var(--muted); }
+  .lvl { padding: 2px 7px; font-family: var(--mono); }
+  .lvl.INFO { color: var(--cpa-success); border-color: var(--cpa-success-border); background: var(--cpa-success-bg); }
+  .lvl.WARN { color: var(--cpa-warning); border-color: var(--cpa-warning-border); background: var(--cpa-warning-bg); }
+  .lvl.ERROR { color: var(--cpa-danger); border-color: var(--cpa-danger-border); background: var(--cpa-danger-bg); }
+  .st200 { color: var(--cpa-success); } .st429 { color: var(--cpa-warning); } .st5 { color: var(--cpa-danger); }
+  #detail {
+    min-width: 0; max-height: calc(100vh - 112px); align-self: start; position: sticky; top: 88px;
+    overflow-y: auto; scroll-margin-top: 82px; border-left: 1px solid var(--cpa-border); background: #fbfbfa;
+  }
+  #detail:focus-visible { outline: 2px solid var(--cpa-focus); outline-offset: -2px; }
+  #detail .inner { padding: 18px; }
+  #detail h2 { margin: 0 0 12px; color: var(--cpa-text); font-size: 13px; font-weight: 700; }
+  #detail h2 + .kv { margin-top: -4px; }
+  .kv { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 7px 10px; margin-bottom: 20px; font-size: 12px; }
+  .kv dt { color: var(--cpa-text-secondary); }
   .kv dd { margin: 0; font-family: var(--mono); word-break: break-all; }
-  .card { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 14px; }
-  .card.miss { border-color: var(--err); color: var(--err); }
-  .raw { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; font: 11px/1.6 var(--mono); white-space: pre-wrap; word-break: break-all; color: var(--muted); }
-  .empty { padding: 60px 20px; text-align: center; color: var(--muted); }
-  .badge { display: inline-block; font: 11px var(--mono); padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
-  .badge.active { color: var(--ok); border-color: #21402a; }
-  .badge.error { color: var(--err); border-color: #4a2225; }
-  .badge.disabled { color: var(--muted); }
-  .tzl { color: var(--muted); font-weight: 400; }
-  .gate { max-width: 380px; margin: 100px auto; padding: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
-  .gate h1 { font-size: 16px; margin: 0 0 6px; }
-  .gate p { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
-  .gate input { width: 100%; margin-bottom: 12px; }
-  .gate button { width: 100%; }
-  .err-text { color: var(--err); font-size: 12px; margin-top: 10px; }
-  .backlink { color: var(--text); text-decoration: none; border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 9px; }
-  .backlink:hover { border-color: var(--accent); }
-  .hide { display: none !important; }
-  @media (max-width: 900px) {
-    .wrap.detail-open { grid-template-columns: 1fr; }
-    .wrap.detail-open aside { display: block; border-left: 0; border-top: 1px solid var(--line); }
-    aside { display: none; }
-    .field { min-width: min(100%, 220px) !important; }
-    header { padding-inline: 12px; }
-    .toolbar, .status { padding-inline: 12px; }
+  .card { margin-bottom: 16px; padding: 13px; background: var(--cpa-surface); border: 1px solid var(--cpa-border); border-radius: 10px; }
+  .card.miss { color: var(--cpa-danger); border-color: var(--cpa-danger-border); background: var(--cpa-danger-bg); }
+  .raw { padding: 11px; background: var(--cpa-surface); border: 1px solid var(--cpa-border); border-radius: 9px; color: var(--cpa-text-secondary); font: 11px/1.65 var(--mono); white-space: pre-wrap; word-break: break-all; }
+  .empty { min-height: 230px; display: grid; place-items: center; padding: 54px 20px; color: var(--cpa-text-secondary); text-align: center; }
+  .badge { padding: 2px 7px; color: var(--cpa-text-secondary); border-color: var(--cpa-border-strong); background: var(--cpa-surface-subtle); font-family: var(--mono); }
+  .badge.active { color: var(--cpa-success); border-color: var(--cpa-success-border); background: var(--cpa-success-bg); }
+  .badge.error { color: var(--cpa-danger); border-color: var(--cpa-danger-border); background: var(--cpa-danger-bg); }
+  .badge.disabled { color: var(--cpa-text-secondary); }
+  .tzl { color: var(--cpa-text-secondary); font-weight: 400; }
+  .err-text { margin-top: 10px; color: var(--cpa-danger); font-size: 12px; }
+  .detail-close { width: 100%; margin-bottom: 16px; }
+  .detail-actions { display: flex; gap: 8px; margin-bottom: 20px; }
+  .detail-actions button { flex: 1; min-width: 0; }
+
+  @media (max-width: 1180px) {
+    .range-row { grid-template-columns: repeat(2, minmax(200px, 1fr)) minmax(120px, .5fr) 100px; }
+    .range-row .primary { grid-column: span 4; }
+  }
+  @media (max-width: 960px) {
+    .sidebar { display: none; }
+    .top-gradient-blur { left: 0; }
+    .workspace { margin-left: 0; }
+    .workspace-content { padding: 82px 20px 32px; }
+    .page-heading { padding-right: 0; }
+    .wrap.detail-open { display: flex; flex-direction: column; }
+    .wrap.detail-open #detail {
+      order: -1; display: block; position: static; max-height: none;
+      border-left: 0; border-bottom: 1px solid var(--cpa-border);
+    }
+    #detail { display: none; }
+  }
+  @media (max-width: 720px) {
+    .top-actions { top: 12px; right: 12px; height: 48px; }
+    .top-actions a, .top-actions button { min-height: 36px; padding: 7px 9px; }
+    .top-actions .action-label { display: none; }
+    .workspace-content { padding: 74px 14px 24px; }
+    .page-heading { margin-bottom: 18px; }
+    .page-heading h1 { font-size: 24px; }
+    .toolbar { padding: 15px; }
+    .range-row, .lookup-row { grid-template-columns: 1fr; }
+    .range-row .primary { grid-column: auto; width: 100%; }
+    .results-panel { margin-top: 14px; }
+    .status { gap: 8px 12px; padding: 10px 12px; }
+    table { min-width: 1030px; }
+    .gate { padding: 22px; }
   }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
@@ -110,89 +296,149 @@
 </head>
 <body>
 
-<div id="gate" class="gate">
-  <h1>Credential Pool Log Console</h1>
-  <p>Enter the management password to continue.</p>
-  <input id="key" type="password" placeholder="Management password" autocomplete="current-password">
-  <button class="primary" id="unlock">Unlock</button>
-  <div id="gateErr" class="err-text hide"></div>
+<div id="gate" class="gate-page">
+  <section class="gate" aria-labelledby="gateTitle">
+    <div class="gate-brand">
+      <span class="brand-mark" aria-hidden="true">◇</span>
+      <span class="brand-copy"><strong>CPAMC</strong><span>CLI Proxy API 管理控制台</span></span>
+    </div>
+    <h1 id="gateTitle">日志链路分析</h1>
+    <p>输入管理密码，查看 New API 请求与关联认证账号。</p>
+    <div class="field">
+      <label for="key">管理密码</label>
+      <input id="key" type="password" placeholder="请输入管理密码" autocomplete="current-password">
+    </div>
+    <button class="primary" id="unlock">进入控制台</button>
+    <div id="gateErr" class="err-text hide" role="alert"></div>
+  </section>
 </div>
 
 <div id="app" class="hide">
-  <header>
-    <h1>Credential Pool Log Console</h1>
-    <span class="node" id="nodeInfo"></span><span class="node" id="tzInfo"></span>
-    <span class="spacer"></span>
-    <a class="backlink" href="/management.html#/logs">Management</a>
-    <button id="lock">Lock</button>
-  </header>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="管理导航">
+      <a class="sidebar-brand" href="/management.html#/">
+        <span class="brand-mark" aria-hidden="true">◇</span>
+        <span class="brand-copy"><strong>CPAMC</strong><span>CLI Proxy API 管理控制台</span></span>
+      </a>
+      <nav>
+        <div class="nav-group">
+          <div class="nav-label">运行</div>
+          <a class="nav-link" href="/management.html#/"><span class="nav-icon" aria-hidden="true">▦</span><span>仪表盘</span></a>
+          <a class="nav-link" href="/management.html#/quick-start"><span class="nav-icon" aria-hidden="true">ϟ</span><span>快速开始</span></a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">网关</div>
+          <a class="nav-link" href="/management.html#/ai-providers"><span class="nav-icon" aria-hidden="true">⌘</span><span>AI 提供商</span></a>
+          <a class="nav-link" href="/management.html#/auth-files"><span class="nav-icon" aria-hidden="true">◇</span><span>认证文件</span><span class="nav-badge">Claude</span></a>
+          <a class="nav-link" href="/management.html#/oauth"><span class="nav-icon" aria-hidden="true">♙</span><span>OAuth 登录</span></a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">观测</div>
+          <a class="nav-link" href="/management.html#/quota"><span class="nav-icon" aria-hidden="true">◔</span><span>配额管理</span></a>
+          <a class="nav-link" href="/management.html#/logs"><span class="nav-icon" aria-hidden="true">≡</span><span>日志查看</span></a>
+          <a class="nav-link active" href="/pool-logs.html" aria-current="page"><span class="nav-icon" aria-hidden="true">↗</span><span>日志链路</span></a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">控制</div>
+          <a class="nav-link" href="/management.html#/config"><span class="nav-icon" aria-hidden="true">☷</span><span>配置面板</span></a>
+          <a class="nav-link" href="/management.html#/system"><span class="nav-icon" aria-hidden="true">▤</span><span>中心信息</span></a>
+        </div>
+      </nav>
+    </aside>
 
-  <div class="toolbar">
-    <div class="row">
-      <div class="field">
-        <label for="from">Start <span class="tzl">(server time)</span></label>
-        <input type="datetime-local" id="from" step="1">
-      </div>
-      <div class="field">
-        <label for="to">End <span class="tzl">(server time)</span></label>
-        <input type="datetime-local" id="to" step="1">
-      </div>
-      <div class="field">
-        <label for="level">Level</label>
-        <select id="level">
-          <option value="">All</option>
-          <option>INFO</option><option>WARN</option><option>ERROR</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="limit">Limit</label>
-        <input type="number" id="limit" value="500" min="1" max="20000" style="width:92px">
-      </div>
-      <button class="primary" id="search">Search</button>
+    <div class="top-gradient-blur" aria-hidden="true"></div>
+    <div class="top-actions" aria-label="页面操作">
+      <a href="/management.html#/logs"><span class="action-icon" aria-hidden="true">←</span><span class="action-label">返回日志查看</span></a>
+      <button id="lock" type="button"><span class="action-icon" aria-hidden="true">↪</span><span class="action-label">锁定</span></button>
     </div>
-    <div class="row">
-      <div class="field" style="flex:1; min-width:320px">
-        <label for="rid">Request ID (exact, searches all 90 days)</label>
-        <input class="mono" id="rid" placeholder="Paste a New API request or upstream request ID" spellcheck="false">
-      </div>
-      <div class="field" style="flex:1; min-width:220px">
-        <label for="q">Filter (account / email / auth_index / model)</label>
-        <input class="mono" id="q" placeholder="substring match" spellcheck="false">
-      </div>
-    </div>
-    <div class="row">
-      <div class="chips">
-        <button class="chip" data-preset="15m">15m</button>
-        <button class="chip" data-preset="1h">1h</button>
-        <button class="chip" data-preset="6h">6h</button>
-        <button class="chip" data-preset="24h">24h</button>
-        <button class="chip" data-preset="7d">7d</button>
-        <button class="chip" data-preset="30d">30d</button>
-        <button class="chip" data-preset="90d">90d</button>
-        <button class="chip" id="clear">Clear filters</button>
-      </div>
-    </div>
-  </div>
 
-  <div class="status" aria-live="polite">
-    <span id="count">Ready</span>
-    <span id="elapsed"></span>
-    <span id="sourceState" class="sourcepill down">New API source not checked</span>
-    <span id="trunc" class="warnpill hide">truncated - narrow the range or raise the limit</span>
-  </div>
+    <main class="workspace">
+      <div class="workspace-content">
+        <header class="page-heading">
+          <div>
+            <h1>日志链路分析</h1>
+            <p>追踪 New API 请求与关联认证账号</p>
+            <div class="page-meta"><span class="node" id="nodeInfo"></span><span class="node" id="tzInfo"></span></div>
+          </div>
+        </header>
 
-  <div class="wrap" id="wrap">
-    <main>
-      <table>
-        <thead><tr>
-          <th>Time <span class="tzl" style="text-transform:none;letter-spacing:0">(server)</span></th><th>Level</th><th>Account</th><th>Model</th>
-          <th style="text-align:right">Status</th><th style="text-align:right">Latency</th><th>Request ID</th>
-        </tr></thead>
-        <tbody id="rows"></tbody>
-      </table>
-      <div id="empty" class="empty">Choose a range and search.</div>
+        <div class="provenance-note">
+          <span class="note-icon" aria-hidden="true">i</span>
+          <span><strong>数据说明：</strong>Request ID、模型、状态与耗时来自 New API；关联账号采用稳定映射，仅用于追踪展示，不代表真实上游处理凭据。</span>
+        </div>
+
+        <section class="toolbar" aria-labelledby="queryTitle">
+          <h2 class="toolbar-title" id="queryTitle">查询条件</h2>
+          <div class="row range-row">
+            <div class="field">
+              <label for="from">开始时间 <span class="tzl field-help">（服务器时间）</span></label>
+              <input type="datetime-local" id="from" step="1">
+            </div>
+            <div class="field">
+              <label for="to">结束时间 <span class="tzl field-help">（服务器时间）</span></label>
+              <input type="datetime-local" id="to" step="1">
+            </div>
+            <div class="field">
+              <label for="level">日志级别</label>
+              <select id="level">
+                <option value="">全部</option>
+                <option>INFO</option><option>WARN</option><option>ERROR</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="limit">返回条数</label>
+              <input type="number" id="limit" value="500" min="1" max="20000">
+            </div>
+            <button class="primary" id="search">查询</button>
+          </div>
+          <div class="row lookup-row">
+            <div class="field">
+              <label for="rid">Request ID <span class="field-help">（精确匹配，覆盖 90 天）</span></label>
+              <input class="mono" id="rid" placeholder="粘贴 New API Request ID 或 Upstream Request ID" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="q">筛选 <span class="field-help">（账号 / 邮箱 / auth_index / 模型）</span></label>
+              <input id="q" placeholder="输入关键词进行包含匹配" spellcheck="false">
+            </div>
+          </div>
+          <div class="row preset-row">
+            <div class="chips" aria-label="快捷时间范围">
+              <button class="chip" data-preset="15m">15 分钟</button>
+              <button class="chip" data-preset="1h">1 小时</button>
+              <button class="chip" data-preset="6h">6 小时</button>
+              <button class="chip" data-preset="24h">24 小时</button>
+              <button class="chip" data-preset="7d">7 天</button>
+              <button class="chip" data-preset="30d">30 天</button>
+              <button class="chip" data-preset="90d">90 天</button>
+              <button class="chip secondary" id="clear">清空筛选</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="results-panel" aria-label="日志查询结果">
+          <div class="status" aria-live="polite">
+            <span id="count">等待查询</span>
+            <span id="elapsed"></span>
+            <span id="sourceState" class="sourcepill down">尚未检查 New API 数据源</span>
+            <span id="trunc" class="warnpill hide">结果已截断，请缩小时间范围或提高返回条数</span>
+          </div>
+
+          <div class="wrap" id="wrap">
+            <div class="table-region">
+              <table>
+                <thead><tr>
+                  <th>时间 <span class="tzl">（服务器）</span></th><th>级别</th><th>关联账号</th><th>模型</th>
+                  <th style="text-align:right">状态</th><th style="text-align:right">耗时</th><th>Request ID</th>
+                </tr></thead>
+                <tbody id="rows"></tbody>
+              </table>
+              <div id="empty" class="empty">选择时间范围后开始查询。</div>
+            </div>
+            <aside id="detail" tabindex="-1" aria-label="日志详情"><div class="inner" id="detailInner"></div></aside>
+          </div>
+        </section>
+      </div>
     </main>
-    <aside id="detail"><div class="inner" id="detailInner"></div></aside>
   </div>
 </div>
 
@@ -229,7 +475,7 @@
     if (!payload) { return; }
     clock = payload;
     var label = clock.timezone + " (UTC" + clock.utc_offset + ")";
-    $("tzInfo").textContent = "clock " + label;
+    $("tzInfo").textContent = "时区 " + label;
     var suffix = clock.utc_offset_seconds === 0 ? "(UTC)" : "(UTC" + clock.utc_offset + ")";
     Array.prototype.forEach.call(document.querySelectorAll(".tzl"), function (node) {
       node.textContent = suffix;
@@ -244,6 +490,22 @@
     if (code === 200) { return "st200"; }
     if (code === 429) { return "st429"; }
     return "st5";
+  }
+  function displaySource(value) {
+    if (value === "newapi") { return "New API"; }
+    if (value === "cpa") { return "CPA 本地事件"; }
+    return value;
+  }
+  function displayMapping(value) {
+    if (value === "mapped") { return "已关联"; }
+    if (value === "unmapped") { return "未关联"; }
+    return value;
+  }
+  function displayAccountStatus(value) {
+    if (value === "active") { return "启用"; }
+    if (value === "error") { return "异常"; }
+    if (value === "disabled") { return "停用"; }
+    return value;
   }
 
   function request(path) {
@@ -266,23 +528,24 @@
     var node = $("sourceState");
     if (!source) {
       node.className = "sourcepill down";
-      node.textContent = "New API source unavailable";
+      node.textContent = "New API 数据源不可用";
       return;
     }
     var lag = source.lag_seconds == null ? source.source_lag_seconds : source.lag_seconds;
-    var suffix = lag == null ? "" : " · " + lag + "s since sync";
+    var suffix = lag == null ? "" : " · 同步延迟 " + lag + " 秒";
     if (source.stale) {
       node.className = "sourcepill stale";
-      node.textContent = "New API cached/stale" + suffix;
+      node.textContent = "New API 缓存数据" + suffix;
       return;
     }
     if (source.available === false || source.status === "not_configured" || source.status === "configuration_error") {
       node.className = "sourcepill down";
-      node.textContent = "New API source " + String(source.status || "unavailable").replace(/_/g, " ");
+      var states = { not_configured: "未配置", configuration_error: "配置错误", unavailable: "不可用" };
+      node.textContent = "New API " + (states[source.status] || String(source.status || "不可用").replace(/_/g, " "));
       return;
     }
     node.className = "sourcepill ok";
-    node.textContent = "New API live" + suffix;
+    node.textContent = "New API 实时" + suffix;
   }
 
   function setPreset(span) {
@@ -310,7 +573,9 @@
     params.push("limit=" + ($("limit").value || 500));
     params.push("format=json");
 
-    $("count").textContent = "Searching...";
+    $("search").disabled = true;
+    $("search").setAttribute("aria-busy", "true");
+    $("count").textContent = "正在查询…";
     $("elapsed").textContent = "";
     var started = performance.now();
 
@@ -318,16 +583,23 @@
       var took = Math.round(performance.now() - started);
       applyClock(data.clock);
       applySource(data.source);
+      $("wrap").classList.remove("detail-open");
+      $("detailInner").textContent = "";
+      selected = -1;
       rows = (data.entries || []).slice().reverse();
       render();
       var total = data["line-count"] == null ? rows.length : data["line-count"];
-      $("count").textContent = rows.length + " shown · " + total + " matched";
-      $("elapsed").textContent = took + " ms";
+      $("count").textContent = "显示 " + rows.length + " 条 · 匹配 " + total + " 条";
+      $("elapsed").textContent = took + " 毫秒";
       $("trunc").classList.toggle("hide", !data.truncated);
+      $("search").disabled = false;
+      $("search").removeAttribute("aria-busy");
     }).catch(function (err) {
-      if (err.message === "unauthorized") { return lock("Session expired, sign in again."); }
+      $("search").disabled = false;
+      $("search").removeAttribute("aria-busy");
+      if (err.message === "unauthorized") { return lock("会话已失效，请重新登录。"); }
       if (err.payload) { applySource(err.payload.source); }
-      $("count").textContent = "Query failed: " + err.message;
+      $("count").textContent = "查询失败：" + err.message;
     });
   }
 
@@ -336,7 +608,7 @@
     body.textContent = "";
     $("empty").classList.toggle("hide", rows.length > 0);
     if (!rows.length) {
-      $("empty").textContent = "No records matched.";
+      $("empty").textContent = "没有符合条件的日志记录。";
       return;
     }
     var frag = document.createDocumentFragment();
@@ -359,7 +631,7 @@
       lvl.appendChild(tag);
       tr.appendChild(lvl);
       if (entry.request_id) {
-        tr.appendChild(cell(entry.account || "unmapped", "acct"));
+        tr.appendChild(cell(entry.account || "未关联", "acct"));
         tr.appendChild(cell(entry.model, "mono"));
         var st = cell(entry.status, "num " + statusClass(entry.status));
         tr.appendChild(st);
@@ -415,54 +687,56 @@
     box.textContent = "";
     $("wrap").classList.add("detail-open");
 
-    var close = el("button", null, "Close details");
-    close.style.marginBottom = "14px";
+    var close = el("button", "secondary detail-close", "关闭详情");
     close.addEventListener("click", function () {
+      var selectedRow = selected >= 0 ? $("rows").children[selected] : null;
       $("wrap").classList.remove("detail-open");
       selected = -1;
       Array.prototype.forEach.call($("rows").children, function (tr) {
         tr.classList.remove("sel");
         tr.setAttribute("aria-selected", "false");
       });
+      if (selectedRow) { selectedRow.focus(); }
     });
     box.appendChild(close);
 
-    box.appendChild(el("h2", null, "Record"));
+    box.appendChild(el("h2", null, "日志记录"));
     box.appendChild(kv([
-      ["Time " + clock.timezone, fmtTime(entry.timestamp)],
-      ["Time UTC", fmtUTC(entry.timestamp)],
-      ["Unix", entry.timestamp],
-      ["Source", entry.source],
-      ["Account mapping", entry.mapping_status],
-      ["Level", entry.level],
-      ["Message", entry.message],
-      ["Model", entry.model],
-      ["Status", entry.status],
-      ["Latency", fmtLatency(entry.latency_ms)],
+      ["时间 " + clock.timezone, fmtTime(entry.timestamp)],
+      ["UTC 时间", fmtUTC(entry.timestamp)],
+      ["Unix 时间戳", entry.timestamp],
+      ["数据来源", displaySource(entry.source)],
+      ["账号关联", displayMapping(entry.mapping_status)],
+      ["日志级别", entry.level],
+      ["消息", entry.message],
+      ["模型", entry.model],
+      ["状态码", entry.status],
+      ["耗时", fmtLatency(entry.latency_ms)],
       ["Request ID", entry.request_id],
       ["Upstream ID", entry.upstream_request_id],
-      ["Auth index", entry.auth_index]
+      ["Auth Index", entry.auth_index]
     ]));
 
     if (entry.request_id) {
-      var copy = el("button", null, "Copy request ID");
+      var copy = el("button", "secondary", "复制 Request ID");
       copy.addEventListener("click", function () {
         navigator.clipboard.writeText(entry.request_id).then(function () {
-          copy.textContent = "Copied";
-          setTimeout(function () { copy.textContent = "Copy request ID"; }, 1200);
+          copy.textContent = "已复制";
+          setTimeout(function () { copy.textContent = "复制 Request ID"; }, 1200);
+        }).catch(function () {
+          copy.textContent = "复制失败";
+          setTimeout(function () { copy.textContent = "复制 Request ID"; }, 1200);
         });
       });
-      var dl = el("button", null, "Download request log");
-      dl.style.marginLeft = "8px";
+      var dl = el("button", "secondary", "下载请求日志");
       dl.addEventListener("click", function () { downloadLog(entry.request_id); });
-      var actions = el("div");
-      actions.style.marginBottom = "18px";
+      var actions = el("div", "detail-actions");
       actions.appendChild(copy);
       actions.appendChild(dl);
       box.appendChild(actions);
 
-      box.appendChild(el("h2", null, "Associated credential"));
-      var card = el("div", "card", entry.auth_index ? "Looking up " + entry.auth_index + " ..." : "No historical account was active at this time.");
+      box.appendChild(el("h2", null, "关联认证账号"));
+      var card = el("div", "card", entry.auth_index ? "正在查询 " + entry.auth_index + " …" : "该时间点没有可关联的历史账号。");
       box.appendChild(card);
       if (!entry.auth_index) {
         card.className = "card miss";
@@ -471,34 +745,38 @@
           card.textContent = "";
           if (!file) {
             card.className = "card miss";
-            card.textContent = "The associated account is outside the retained account history.";
+            card.textContent = "该关联账号已超出历史账号保留范围。";
             return;
           }
           var name = el("div", "mono");
           name.style.marginBottom = "10px";
           name.style.wordBreak = "break-all";
           name.appendChild(document.createTextNode(file.name + " "));
-          name.appendChild(el("span", "badge " + file.status, file.status));
+          name.appendChild(el("span", "badge " + file.status, displayAccountStatus(file.status)));
           card.appendChild(name);
           card.appendChild(kv([
-            ["Email", file.email],
-            ["Plan", file.account_type || file.plan],
-            ["Account", file.account],
-            ["Auth index", file.auth_index],
-            ["Priority", file.priority],
-            ["Success", file.success],
-            ["Failed", file.failed],
-            ["Joined", file.first_seen],
-            ["Retired", file.retired_at],
-            ["Current", file.current],
-            ["Note", file.status_message]
+            ["邮箱", file.email],
+            ["套餐", file.account_type || file.plan],
+            ["账号", file.account],
+            ["Auth Index", file.auth_index],
+            ["优先级", file.priority],
+            ["成功", file.success],
+            ["失败", file.failed],
+            ["加入时间", file.first_seen],
+            ["退出时间", file.retired_at],
+            ["当前账号", file.current === true ? "是" : (file.current === false ? "否" : file.current)],
+            ["状态说明", file.status_message]
           ]));
         });
       }
     }
 
-    box.appendChild(el("h2", null, "Raw line"));
+    box.appendChild(el("h2", null, "原始日志行"));
     box.appendChild(el("div", "raw", entry.line));
+    $("detail").focus();
+    if (window.matchMedia("(max-width: 960px)").matches) {
+      $("detail").scrollIntoView({ block: "start" });
+    }
   }
 
   function lookupAccount(authIndex) {
@@ -518,7 +796,7 @@
       a.download = "request-" + requestID.replace(/[^A-Za-z0-9._-]/g, "_") + ".log";
       a.click();
       URL.revokeObjectURL(url);
-    }).catch(function (err) { alert("Download failed: " + err.message); });
+    }).catch(function (err) { alert("下载失败：" + err.message); });
   }
 
   function unlock() {
@@ -531,12 +809,12 @@
       $("key").value = "";
       applyClock(probe.clock);
       applySource(probe.source);
-      $("nodeInfo").textContent = "associated request logs";
+      $("nodeInfo").textContent = "关联请求日志";
     }).then(function () {
       setPreset("1h");
       search();
     }).catch(function (err) {
-      $("gateErr").textContent = err.message === "unauthorized" ? "Wrong password." : "Failed: " + err.message;
+      $("gateErr").textContent = err.message === "unauthorized" ? "管理密码错误。" : "登录失败：" + err.message;
       $("gateErr").classList.remove("hide");
     });
   }
