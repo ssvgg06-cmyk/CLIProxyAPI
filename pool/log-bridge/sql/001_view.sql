@@ -58,6 +58,7 @@ SELECT
 FROM public.logs
 WHERE logs.type IN (2, 5)
   AND logs.created_at >= 0
+  AND logs."group" = 'max'
   AND logs.model_name LIKE 'claude-%'
   AND OCTET_LENGTH(logs.model_name) BETWEEN 8 AND 128
   AND logs.model_name !~ '[[:cntrl:]]'
@@ -66,7 +67,7 @@ WHERE logs.type IN (2, 5)
   AND logs.request_id !~ '[[:cntrl:]]';
 
 COMMENT ON VIEW cpa_log_bridge.claude_logs IS
-    'Strict CPA bridge projection of Claude consume/error logs; excludes user, token, IP, content and raw metadata.';
+    'Strict CPA bridge projection of max-group Claude consume/error logs; excludes user, token, IP, content and raw metadata.';
 
 CREATE OR REPLACE FUNCTION cpa_log_bridge.changes(p_after_id bigint, p_limit integer)
 RETURNS TABLE (
@@ -97,6 +98,7 @@ AS $function$
     FROM public.logs AS logs
     WHERE logs.type IN (2, 5)
       AND logs.created_at >= 0
+      AND logs."group" = 'max'
       AND logs.model_name LIKE 'claude-%'
       AND OCTET_LENGTH(logs.model_name) BETWEEN 8 AND 128
       AND logs.model_name !~ '[[:cntrl:]]'
@@ -137,6 +139,7 @@ AS $function$
     FROM public.logs AS logs
     WHERE logs.type IN (2, 5)
       AND logs.created_at >= 0
+      AND logs."group" = 'max'
       AND logs.model_name LIKE 'claude-%'
       AND OCTET_LENGTH(logs.model_name) BETWEEN 8 AND 128
       AND logs.model_name !~ '[[:cntrl:]]'
@@ -166,6 +169,7 @@ AS $function$
     FROM public.logs AS logs
     WHERE logs.type IN (2, 5)
       AND logs.created_at >= 0
+      AND logs."group" = 'max'
       AND logs.model_name LIKE 'claude-%'
       AND OCTET_LENGTH(logs.model_name) BETWEEN 8 AND 128
       AND logs.model_name !~ '[[:cntrl:]]'
@@ -208,6 +212,7 @@ AS $function$
     FROM public.logs AS logs
     WHERE logs.type IN (2, 5)
       AND logs.created_at >= 0
+      AND logs."group" = 'max'
       AND logs.model_name LIKE 'claude-%'
       AND OCTET_LENGTH(logs.model_name) BETWEEN 8 AND 128
       AND logs.model_name !~ '[[:cntrl:]]'
@@ -259,6 +264,7 @@ AS $function$
     FROM public.logs AS logs
     WHERE logs.type IN (2, 5)
       AND logs.created_at >= 0
+      AND logs."group" = 'max'
       AND logs.model_name LIKE 'claude-%'
       AND OCTET_LENGTH(logs.model_name) BETWEEN 8 AND 128
       AND logs.model_name !~ '[[:cntrl:]]'
@@ -301,6 +307,7 @@ AS $function$
     FROM public.logs AS logs
     WHERE logs.type IN (2, 5)
       AND logs.created_at >= 0
+      AND logs."group" = 'max'
       AND logs.model_name LIKE 'claude-%'
       AND OCTET_LENGTH(logs.model_name) BETWEEN 8 AND 128
       AND logs.model_name !~ '[[:cntrl:]]'
@@ -330,7 +337,7 @@ WHERE attribute.attrelid = 'public.logs'::regclass
 GRANT USAGE ON SCHEMA public TO cpa_log_bridge_owner;
 GRANT SELECT (
     id, created_at, type, model_name, other, use_time, request_id,
-    upstream_request_id
+    upstream_request_id, "group"
 ) ON public.logs TO cpa_log_bridge_owner;
 
 REVOKE ALL ON SCHEMA cpa_log_bridge FROM PUBLIC;

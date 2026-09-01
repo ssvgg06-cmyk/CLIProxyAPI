@@ -65,7 +65,7 @@ func TestSQLAssetsExposeOnlyFixedReadOnlyFunctions(t *testing.T) {
 		t.Fatal("could not locate view projection")
 	}
 	projection := view[projectionStart:projectionEnd]
-	for _, forbidden := range []string{"username", "token_name", "user_id", "channel_id", "prompt_tokens", "completion_tokens", "quota", "logs.ip", "logs.content"} {
+	for _, forbidden := range []string{"username", "token_name", "user_id", "channel_id", "prompt_tokens", "completion_tokens", "quota", "logs.ip", "logs.content", `logs."group"`} {
 		if strings.Contains(projection, forbidden) {
 			t.Fatalf("view projection contains forbidden field %q", forbidden)
 		}
@@ -98,6 +98,9 @@ func TestSQLAssetsExposeOnlyFixedReadOnlyFunctions(t *testing.T) {
 	}
 	if strings.Contains(view, "RESET (security_barrier)") {
 		t.Fatal("security_barrier must never be reset")
+	}
+	if strings.Count(view, `logs."group" = 'max'`) != 7 {
+		t.Fatal("the view and every reader-callable query must filter the New API max group")
 	}
 	for _, functionName := range []string{
 		"changes", "search_initial", "search_boundary", "search_before", "lookup_primary", "lookup_upstream",
@@ -161,6 +164,12 @@ func TestSQLAssetsExposeOnlyFixedReadOnlyFunctions(t *testing.T) {
 			t.Fatalf("function owner grant includes forbidden column %q", forbiddenColumn)
 		}
 	}
+	if !strings.Contains(view[grantStart:grantStart+grantEnd], `"group"`) {
+		t.Fatal("function owner grant must include only the group column needed for max filtering")
+	}
+	if strings.Count(role, "'group'") != 2 {
+		t.Fatal("owner privilege verification must allow the group filter column and no other additions")
+	}
 	for _, rangeGuard := range []string{
 		"p_from >= 0",
 		"p_to >= p_from",
@@ -197,10 +206,11 @@ func TestSQLAssetsExposeOnlyFixedReadOnlyFunctions(t *testing.T) {
 
 	searchIndex := readDeploymentAsset(t, "sql", "003_search_index.sql")
 	for _, required := range []string{
-		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_cpa_log_bridge_safe_created_id_v2",
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_cpa_log_bridge_max_created_id_v3",
 		"ON public.logs (created_at DESC, id DESC)",
 		"WHERE type IN (2, 5)",
 		"AND created_at >= 0",
+		`AND "group" = 'max'`,
 		"AND model_name LIKE 'claude-%'",
 		"AND OCTET_LENGTH(model_name) BETWEEN 8 AND 128",
 		"AND model_name !~ '[[:cntrl:]]'",
@@ -215,6 +225,7 @@ func TestSQLAssetsExposeOnlyFixedReadOnlyFunctions(t *testing.T) {
 	for _, viewPredicate := range []string{
 		"logs.type IN (2, 5)",
 		"logs.created_at >= 0",
+		`logs."group" = 'max'`,
 		"logs.model_name LIKE 'claude-%'",
 		"OCTET_LENGTH(logs.model_name) BETWEEN 8 AND 128",
 		"logs.model_name !~ '[[:cntrl:]]'",

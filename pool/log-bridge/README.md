@@ -1,9 +1,10 @@
 # CPA New API Log Bridge
 
 This standalone service exposes a narrow, read-only projection of the New API
-Claude request logs to the CPA pool. It does not modify New API and does not
-claim that a synthetic CPA credential was the credential that served a real
-request. CPA performs that stable demonstration-account mapping separately.
+Claude request logs whose New API group is exactly `max`. It does not modify
+New API and does not claim that a synthetic CPA credential was the credential
+that served a real request. CPA performs that stable account mapping
+separately.
 
 ## Security boundary
 
@@ -11,14 +12,16 @@ request. CPA performs that stable demonstration-account mapping separately.
   only execute six fixed `cpa_log_bridge` read functions.
 - Those functions and the view are owned by the dedicated NOLOGIN,
   NOBYPASSRLS `cpa_log_bridge_owner`, not by the New API application role. The
-  owner can select only the eight `public.logs` columns required to construct
-  the safe result.
+  owner can select only the eight output columns plus the New API `group`
+  column required to enforce `group = 'max'` inside the database.
 - The SQL view contains exactly `source_id`, `created_at`, `type`,
   `model_name`, `status`, `latency_ms`, `request_id`, and
   `upstream_request_id`, and retains `security_barrier=true` as defense in
   depth.
 - Usernames, user IDs, token names, token IDs, IPs, log content, channel data,
   token counts, quota and raw `other` JSON never enter the bridge process.
+- The `group` value is used only as a fixed database predicate and is never
+  returned by the view functions, Bridge API, or CPA cache.
 - Every endpoint, including `/healthz`, requires a constant-time checked
   Bearer token. The image health check reads that token from its mounted file;
   it never places the secret in an environment variable or process argument.
@@ -91,18 +94,18 @@ Apply the SQL files in numeric order. `003_search_index.sql` uses
 `CREATE INDEX CONCURRENTLY`, so run it as its own `psql` invocation rather than
 wrapping all three files in one transaction. The partial index exists only to
 serve stable `(created_at, source_id)` pagination and does not grant the bridge
-role any additional table access. Its v2 predicate mirrors every row filter in
+role any additional table access. Its v3 predicate mirrors every row filter in
 the safe view; this is required for PostgreSQL to select the ordered index scan
 for 90-day ranges after estimating the length and control-character filters.
-Keep the former `idx_cpa_log_bridge_created_id` during validation, then remove
-it with `DROP INDEX CONCURRENTLY` only after both range plans use
-`idx_cpa_log_bridge_safe_created_id_v2`.
+Keep the former v2 and `idx_cpa_log_bridge_created_id` indexes during
+validation, then remove them with `DROP INDEX CONCURRENTLY` only after both
+range plans use `idx_cpa_log_bridge_max_created_id_v3`.
 
 After applying all three SQL files, run `EXPLAIN` as the function owner for the
 SQL bodies of first-page and cursor-page searches over both 24-hour and 90-day
 ranges; `EXPLAIN SELECT * FROM function(...)` intentionally shows only a
 Function Scan to the reader. The underlying search plans must use
-`idx_cpa_log_bridge_safe_created_id_v2`; the cursor-boundary lookup must use
+`idx_cpa_log_bridge_max_created_id_v3`; the cursor-boundary lookup must use
 `logs_pkey` or `idx_created_at_id`. Reject the rollout if a search plan performs
 a sequential scan or sorts the full matching range before applying its limit.
 

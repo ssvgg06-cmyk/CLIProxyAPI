@@ -152,6 +152,26 @@ func TestPoolLogCacheCapsAndRoundTripsGzip(t *testing.T) {
 	}
 }
 
+func TestPoolLogCacheDiscardsSnapshotFromBeforeMaxGroupFilter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "newapi-log-cache.json.gz")
+	now := time.Now().UTC().Truncate(time.Second)
+	record := poolCacheTestRecord(41, "pre-max-filter-request", "")
+	record.CreatedAt = now.Add(-time.Minute).Unix()
+	writePoolLogCacheSnapshot(t, path, poolLogCacheSnapshot{
+		Version:     poolLogCacheVersion - 1,
+		AfterID:     record.SourceID,
+		UpdatedAt:   now.Unix(),
+		LastSuccess: now.Unix(),
+		Items:       []poolSourceLog{record},
+	})
+
+	cache := newPoolLogCache(path, 10)
+	entries, cursor, lastSuccess := cache.stats()
+	if entries != 0 || cursor != 0 || !lastSuccess.IsZero() {
+		t.Fatalf("pre-filter cache survived version migration: entries=%d cursor=%d last_success=%v", entries, cursor, lastSuccess)
+	}
+}
+
 func TestPoolLogCacheRejectsUnsafeRecordsAndDoesNotClampLatency(t *testing.T) {
 	hugeLatency := int64(12_140_000)
 	accepted, ok := sanitizePoolSourceLog(poolSourceLog{

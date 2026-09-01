@@ -6,9 +6,10 @@ interface, model list, lifecycle events and quota views without storing usable
 OAuth tokens or contacting Anthropic.
 
 Request logs come from the narrow read-only bridge documented in
-[`pool/log-bridge`](log-bridge/README.md). New API request identifiers, times,
-Claude model names, statuses and latencies are preserved. User, token, channel,
-IP, prompt, response and raw metadata fields never enter CPA.
+[`pool/log-bridge`](log-bridge/README.md). Only Claude logs whose New API group
+is exactly `max` are read. New API request identifiers, times, Claude model
+names, statuses and latencies are preserved. User, token, channel, IP, prompt,
+response, group values and raw metadata fields never enter CPA.
 
 ```bash
 export CPA_POOL_PASSWORD='replace-with-a-random-password'
@@ -47,6 +48,7 @@ an inbound API key.
 CPA polls the bridge every five seconds by the monotonic New API log row ID and
 persists only the safe projection. Initial startup loads at most the most recent
 30 minutes/20,000 records rather than replaying the complete New API table.
+Caches created before max-group filtering are discarded and safely rebuilt.
 
 Bridge failures use exponential backoff up to 60 seconds. Cached list and exact
 matches remain available with `source.stale=true`; an uncached exact lookup

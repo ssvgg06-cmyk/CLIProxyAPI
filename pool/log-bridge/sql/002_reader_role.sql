@@ -91,7 +91,7 @@ BEGIN
 
     FOREACH column_name IN ARRAY ARRAY[
         'id', 'created_at', 'type', 'model_name', 'other', 'use_time',
-        'request_id', 'upstream_request_id'
+        'request_id', 'upstream_request_id', 'group'
     ]
     LOOP
         IF NOT has_column_privilege('cpa_log_bridge_owner', 'public.logs', column_name, 'SELECT') THEN
@@ -107,7 +107,7 @@ BEGIN
           AND NOT attribute.attisdropped
           AND attribute.attname::text <> ALL (ARRAY[
               'id', 'created_at', 'type', 'model_name', 'other', 'use_time',
-              'request_id', 'upstream_request_id'
+              'request_id', 'upstream_request_id', 'group'
           ])
     LOOP
         IF has_column_privilege('cpa_log_bridge_owner', 'public.logs', column_name, 'SELECT') THEN

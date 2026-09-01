@@ -17,7 +17,9 @@ import (
 )
 
 const (
-	poolLogCacheVersion    = 1
+	// Version 2 invalidates records cached before the bridge was restricted to
+	// the New API max group.
+	poolLogCacheVersion    = 2
 	poolLogCacheMaxEntries = 20000
 	poolLogCacheMaxBytes   = 64 << 20
 	// Source identifiers are serialized as JSON numbers in the bridge protocol.
